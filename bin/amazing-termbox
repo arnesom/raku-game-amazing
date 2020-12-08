@@ -1,0 +1,361 @@
+#! /usr/bin/env raku
+
+use Game::Amazing;
+use Termbox :ALL;
+use Pod::To::Text;
+
+my $curr-row;
+my $curr-col;
+my $moves;
+my $finished;
+my @visited;
+my $m;
+my $traversable;
+my $traversable-path;
+my $saved;
+my $tb;
+
+multi MAIN ($file where $file.IO.f && $file.IO.r, :d(:$directions) = False, :n($no-path))
+{
+  $m = Game::Amazing.new: $file;
+  
+  start-game($m, 0, :$directions, init => True, :$no-path);
+}
+
+multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :d(:$directions) = False, :n($no-path))
+{
+  $m = Game::Amazing.new(:$rows, :$cols, :$scale, ensure-traversable => True);
+
+  start-game($m, $scale, :$directions, init => True, :$no-path);
+}
+
+multi MAIN(Bool :h(:$help))
+{
+  say pod2text($=pod);
+}
+
+sub again ($scale, :$rows = $m.rows, :$cols = $m.cols, :$directions, :$no-path)
+{
+  tb-clear;
+  $m.new(:$rows, :$cols, :$scale, ensure-traversable => True);
+
+  start-game($m, $scale, :$directions, :$no-path);
+}
+
+sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
+{
+  my $now  = now;
+
+  if $init
+  {
+    if tb-init() -> $ret
+    {
+      note "tb-init() failed with error code $ret";
+      exit 1;
+    }
+    $tb = True;
+    END tb-shutdown if $tb;
+  }
+  
+  print-string("Ctrl-C: Exit. Use arrow keys to move.", 0, 0, TB_BLACK, TB_WHITE );
+  print-string("F1: New smaller F2: New F3: New larger.", 0, $m.rows +1, TB_BLACK, TB_WHITE );
+
+  for ^$m.rows -> $row
+  {
+    for ^$m.cols -> $col
+    {
+      set-maze-cell($row, $col, TB_WHITE, TB_BLACK );
+    }
+  }
+
+  $curr-row = 0;
+  $curr-col = 0;
+  $moves    = 0;
+  $finished = False;
+  @visited  = ();
+  $saved    = False;
+  ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+
+  set-maze-cell($curr-row, $curr-col, TB_YELLOW, TB_BLACK);
+
+  print-directions($m.get-directions(0,0)) if $directions;
+
+  tb-present;
+
+  return unless $init;
+
+  my $events = Supplier.new;
+
+  start
+  {
+    while tb-poll-event( my $ev = Termbox::Event.new ) { $events.emit: $ev }
+  }
+
+  react whenever $events.Supply -> $ev
+  {
+    given $ev.type
+    {
+      when TB_EVENT_KEY
+      {
+        given $ev.key
+        {
+          when TB_KEY_ARROW_DOWN | TB_KEY_ARROW_UP | TB_KEY_ARROW_LEFT | TB_KEY_ARROW_RIGHT
+	  {
+	    next if $finished;
+	  
+            my $old-row = $curr-row;
+	    my $old-col = $curr-col;
+
+            my $curr-directions = $m.get-directions($curr-row, $curr-col);
+
+            if    $ev.key == TB_KEY_ARROW_DOWN  { $curr-row++ if $curr-directions ~~ /S/ }
+	    elsif $ev.key == TB_KEY_ARROW_UP    { $curr-row-- if $curr-directions ~~ /N/ }
+	    elsif $ev.key == TB_KEY_ARROW_LEFT  { $curr-col-- if $curr-directions ~~ /W/ }
+	    elsif $ev.key == TB_KEY_ARROW_RIGHT { $curr-col++ if $curr-directions ~~ /E/ }
+
+            if $old-row != $curr-row || $old-col != $curr-col
+            {
+	      $no-path
+	        ?? set-maze-cell($old-row, $old-col, TB_WHITE, TB_BLACK)
+	        !! set-maze-cell($old-row, $old-col, TB_GREEN, TB_BLACK);
+		
+	      $moves++;
+	      if $scale
+	      {
+	         $curr-row == $curr-col == 0
+	           ?? print-string("F1: New smaller F2: New F3: New larger.", 0, $m.rows +1, TB_BLACK, TB_WHITE)
+                   !! print-string(" " x 39, 0, $m.rows +1, Any, Any);
+              } 
+            }
+            if ($curr-row == $m.rows -1 && $curr-col == $m.cols -1)
+  	    {
+              set-maze-cell($curr-row, $curr-col, TB_RED, TB_BLACK);
+              hide-directions if $directions;
+              print-string(" " x 24, 13, 0, TB_BLACK, TB_WHITE);
+ 	      print-string("F1: New smaller F2: New F3: New larger.", 0, $m.rows +1, TB_WHITE, TB_BLACK ) if $scale;
+ 	      print-string("Finished in $moves moves ({ ($moves / $traversable-path.chars * 100).Int }% and { floor(now - $now) } seconds)  ", 0, $m.rows +2, TB_WHITE, TB_GREEN);
+   	      print-string("END: See shortest path ({ $traversable-path.chars } moves)     ", 0, $m.rows +3, TB_WHITE, TB_BLACK );
+ 	      print-string("F6: Save game", 0, $m.rows +4, TB_WHITE, TB_BLACK ) if $scale;
+	      $finished = True;
+            }
+            else
+	    {
+	      @visited[$curr-row][$curr-col] = True;
+              $curr-row == $curr-col == 0
+	        ?? set-maze-cell($curr-row, $curr-col, TB_YELLOW, TB_BLACK)
+  	        !! set-maze-cell($curr-row, $curr-col, TB_BLACK, TB_YELLOW);
+
+              print-directions($m.get-directions($curr-row, $curr-col)) if $directions;
+            }
+	  
+            tb-present;
+          }
+		
+          when TB_KEY_END
+	  {
+	    next unless $finished;
+	    if $traversable
+	    {
+	      show-shortest-path($traversable-path);
+	      print-string("Shortest path ({ $traversable-path.chars } moves) shown     ", 0, $m.rows +3, TB_YELLOW, TB_BLACK);
+	    }
+	    else
+	    {
+	      print-string("Not traversable", $m.rows +2, 0, TB_YELLOW, Any);
+	    }
+            tb-present;
+	  }
+
+          when TB_KEY_F1 | TB_KEY_F2 | TB_KEY_F3
+	  {
+	    next unless $scale;
+
+ 	    next unless $finished || $moves == 0;
+
+            my $offset = ( if $ev.key == TB_KEY_F1 { -1 } elsif $ev.key == TB_KEY_F2 { 0 } else { +1 } );
+
+            $offset = 0 if ($m.rows < 5 || $m.cols < 5 ) && $offset == -1;
+
+            again($scale, rows => $m.rows + $offset, cols => $m.cols + $offset, :$directions);
+		    
+            tb-present;
+	  }
+	  	  
+          when TB_KEY_F6
+	  {
+	    next unless $finished;
+	    next if $saved;
+            print-string("Saved maze as «{ $m.save(:with-size) }».", 0, $m.rows +4, TB_YELLOW, TB_BLACK ) if $scale;
+	    $saved = True;
+            tb-present;
+	  }
+
+          when TB_KEY_CTRL_C
+	  {
+            tb-present;
+	    done;
+	    exit;
+          }
+	}
+      }
+    }
+  }
+}
+
+sub print-string (Str $str, Int $column, Int $row, $bgcolor, $fgcolor)
+{
+  my $x = 0;
+  for $str.ords -> $c
+  {
+    tb-change-cell( $column + $x++, $row, $c, $bgcolor, $fgcolor);
+  }
+}
+
+sub print-directions ($directions)
+{
+  my $col = $m.cols + 3;
+  my $row = 3;
+
+  tb-change-cell($col,    $row -1, '⯅'.ord,  TB_WHITE, $directions.contains('N') ?? TB_GREEN !! TB_RED);
+  tb-change-cell($col +1, $row -1, ' '.ord,  TB_WHITE, $directions.contains('N') ?? TB_GREEN !! TB_RED);
+  
+  tb-change-cell($col +2, $row,    '⯈'.ord, TB_WHITE, $directions.contains('E') ?? TB_GREEN !! TB_RED);
+  tb-change-cell($col +3, $row,    ' '.ord, TB_WHITE, $directions.contains('E') ?? TB_GREEN !! TB_RED);
+  
+  tb-change-cell($col,    $row +1, '⯆'.ord,  TB_WHITE, $directions.contains('S') ?? TB_GREEN !! TB_RED);
+  tb-change-cell($col +1, $row +1, ' '.ord,  TB_WHITE, $directions.contains('S') ?? TB_GREEN !! TB_RED);
+  
+  tb-change-cell($col -2, $row,    '⯇'.ord, TB_WHITE, $directions.contains('W') ?? TB_GREEN !! TB_RED);
+  tb-change-cell($col -1, $row,    ' '.ord, TB_WHITE, $directions.contains('W') ?? TB_GREEN !! TB_RED);
+}
+
+sub hide-directions
+{
+  my $col = $m.cols + 3;
+  my $row = 3;
+  print-string("  ", $col,    $row -1, Any, Any);
+  print-string("  ", $col,    $row +1, Any, Any);
+  print-string("  ", $col -2, $row,    Any, Any);
+  print-string("  ", $col +2, $row,    Any, Any);
+}
+
+sub set-maze-cell ($row, $col, $bgcolor, $fgcolor)
+{
+  tb-change-cell($col, $row +1, $m.maze[$row][$col].ord, $bgcolor, $fgcolor);
+}
+
+sub show-shortest-path ($path)
+{
+  my $row = 0;
+  my $col = 0;
+  
+  set-maze-cell($row, $col, TB_GREEN, TB_WHITE);
+  
+  for $path.comb -> $direction
+  {
+    if    $direction eq "N" { $row--; }
+    elsif $direction eq "S" { $row++; }
+    elsif $direction eq "E" { $col++; }
+    elsif $direction eq "W" { $col--; }
+    
+    @visited[$row][$col]
+      ?? set-maze-cell($row, $col, TB_GREEN, TB_WHITE)
+      !! set-maze-cell($row, $col, TB_YELLOW, TB_WHITE);
+  }
+}
+
+=begin pod
+
+=head1 NAME
+
+amazing-termbox - Play mazes in your terminal
+
+=head1 SYNOPSIS
+
+Try to find your way through a maze, either user specified (by 'mazemaker' or
+'amazing-gtk') or randomly generated.
+
+Usage:
+
+    amazing-termbox [-n|--no-path] [-d|--directions] <maze-file>
+    amazing-termbox [-n|--no-path] [-d|--directions] [-b|--box=<Int>] [-r|--rows=<Int>] [-c|--cols=<Int>] [-s|--scale=<Int>]
+    amazing-termbox [-h|--help]
+
+The path is highlighetd behind you, as you go along the maze. This can be disabled with the
+[-n|--no-path] option.
+
+Use [--d|-directions] to enable viewing of the available directions of travel, shown to the
+right of the maze,
+
+If you specify a maze-file, usually with the «.maze» extension, it will be loaded. The maze
+does not have to be traversable.
+
+If you don't specify a maze-file, the program will generate one for you automatically. The
+default size is 25 rows and columns, but this can be changed with the [-b|--box=<Int>] option.
+If you want to only set one of them, use [-r|--rows=<Int>] for the number of rows, or
+[-c|--cols=<Int>] for the number of columns.
+
+The maze symbols with two exits ('╗', '═', '╝', '╔', '║' and '╚') have weight 1, and the rest,
+with three ('╦', '╠', '╣' and '╩') and four ('╬') exits have weight 7. That means that the
+last symbols are 7 times more likely to be choosen. You can override that with
+[-s|--scale=<Int>].
+
+Spurious exits out of the maze are possible, but will not work as exits. The randomly generated
+mazes does not have them, to avoid confusion.
+
+The randomly generated mazes will always be traversable, and it may take some time to generate
+thye maze as the program will generate random mazes until it gets one that is traversable.
+Especially for lower [-s|--scale=<Int>] values.
+
+Examples:
+
+    amazing-termbox -h
+    
+    amazing-termbox -d mazes/25x25-ok.maze
+    amazing-termbox mazes/25x25-ok.maze
+
+    amazing-termbox
+    amazing-termbox -b=20
+    amazing-termbox -b=20 -c=30
+    amazing-termbox -r=20 -c=30
+    amazing-termbox -s=1
+
+=head1 PLAYING
+
+You start at the upper left corner ('█', the solid box).
+
+Use the arrow keys to navigate through the maze. illegal moves are not possible. Visited cells
+are highlighted as you go along, to make it easier to see where you have been. 
+
+Your task is to traverse the maze and arrive at the exit (the second solid box in the lower
+right corner). Randomly generated mazes will always be traversable, but a maze loaded from a
+file may or may not be traversable.
+
+You are presented with the score when finished, the time it took and the number of steps. The
+latter is compared to the shortest path through the maze. Press the «END» key to see the
+shortest path (or rather one of them, as there may be several with the same length). Press
+«F6» to save the maze with a random filename. Note that the number of rows and columns are
+included in the name, which is shown.
+
+Random maze mode gives you the possibility to start new games, but only at the entrance or exit.
+(You can always go back to the entrance, if stuck, to start a new game.) Press «F1» to start
+with a smaller maze (1 less in both row and columns), «F2» to get one with the same size, and
+«F3» for a larger maze (1 more in both row and columns).
+
+Press «Control-C» to exit.
+
+=head1 SEE ALSO
+
+This program is part of the Raku module «Game::Amazing».
+
+=head1 AUTHOR
+
+Arne Sommer <arne@perl6.eu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2020 Arne Sommer
+
+This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
+
+=end pod

@@ -1,0 +1,76 @@
+#! /usr/bin/env raku
+
+use Game::Amazing;
+use Pod::To::Text;
+
+multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c($cols) = $box, :s(:$scale) = 7, :f(:$file), :e(:$ensure-traversable) = False)
+{
+  my $m = Game::Amazing.new(:$rows, :$cols, :$scale, :$ensure-traversable);
+
+  $m.save($file && $file.ends-with('.maze') ?? $file !! $*OUT);
+}
+
+multi MAIN(Bool :h(:$help))
+{
+  say pod2text($=pod);
+}
+
+=begin pod
+
+=head1 NAME
+
+mazemaker - Generate random mazes
+
+=head1 SYNOPSIS
+
+Use this program to generate random mazes that you or others can try to traverse later,
+with the programs «amazing-termbox» (in your shell) or «amazing-gtk» (a GUI program).
+
+Usage:
+
+    mazemaker [-b|--box=<Int>] [-r|--rows=<Int>] [-c|--cols=<Int>] [-s|--scale=<Int>] [-f|--file=<Str>] [-e|--ensure-traversable]
+    mazemaker [-h|--help]
+
+If you don't specify a maze-file, the program will generate one for you automatically. The
+default size is 25 rows and columns, but this can be changed with the [-b|--box=<Int>] option.
+If you want to only set one of them, use [-r|--rows=<Int>] for the number of rows, or
+[-c|--cols=<Int>] for the number of columns.
+
+The maze symbols with two exits ('╗', '═', '╝', '╔', '║' and '╚') have weight 1, and the rest,
+with three ('╦', '╠', '╣' and '╩') and four ('╬') exits have weight 7. That means that the
+last symbols are 7 times more likely to be choosen. You can override that with [-s|--scale=<Int>].
+
+The mazes may or may not be traversable. Use the [-e|--ensure-traversable] option to ensure a
+traversable maze. (Note that it may take some time to generate a traversable maze, sspecially
+for lower [-s|--scale=<Int>] values), as it does so in a loop until it finds one that is traversable.
+
+The maze is printed to the screen, unless a filname has been provided with the [-f|file=<Str>] option.
+The filename must end with «.maze».
+
+Examples:
+
+    mazemaker -h
+    
+    mazemaker
+    mazemaker -e -f=mazes/25x25-ok.maze
+    
+    mazemaker -b=20
+    mazemaker -b=20 -c=30
+    mazemaker -r=20 -c=30
+    mazemaker -s=1 -e
+
+=head1 SEE ALSO
+
+This program is part of the Raku module «Game::Amazing».
+
+=head1 AUTHOR
+
+Arne Sommer <arne@perl6.eu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2020 Arne Sommer
+
+This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
+
+=end pod

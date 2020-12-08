@@ -1,0 +1,111 @@
+#! /usr/bin/env raku
+
+use Game::Amazing;
+use Pod::To::Text;
+
+multi MAIN(Bool :h(:$help))
+{
+  say pod2text($=pod);
+}
+
+multi MAIN ($maze where $maze.IO.e && $maze.IO.r, :l(:$left), :v(:$verbose), :s(:$show), :h(:$html))
+{
+  my $m = Game::Amazing.new: $maze;
+
+  my ($traversable, $visited) = $m.is-traversable-wall(:get-path, :$left, :$verbose);
+
+  my $col-blue  = "\e[44m";
+  my $col-green = "\e[42m";
+  my $col-red   = "\e[101m";
+  my $col-stop  = "\e[0m";
+
+  if ($html)
+  {
+    $col-blue  = '<span class="text-primary">';
+    $col-green = '<span class="text-success">';
+    $col-red   = '<span class="text-danger">';
+    $col-stop  = '</span>';
+  }
+
+  if $verbose
+  {
+    say ": Turn: { $left ?? 'left' !! 'right' }";
+    say ": Rows: { $m.rows }";
+    say ": Cols: { $m.cols }";
+    say ": Row: { @$_.join }" for $m.maze;
+  }
+
+  sub show-path
+  {
+    my $col-start = $traversable ?? $col-green !! $col-red;
+
+    for ^$m.rows -> $row
+    {
+      for ^$m.cols -> $col
+      {
+        print @($visited)[$row][$col]
+         ?? $col-start ~ $m.maze[$row][$col] ~ $col-stop
+         !! $m.maze[$row][$col];
+      }
+      say '';
+    }
+  }
+
+  say $traversable
+    ?? "yes"
+    !! "no";
+
+  show-path if $show;
+}
+
+=begin pod
+
+=head1 NAME
+
+maze-solver-wall - Check a maze for traversability with the Wall Follower Algorithm
+
+=head1 SYNOPSIS
+
+Use this program to check of the given maze is traversable. It uses the Wall Fallower
+Algorithm, and the default is to follow the right wall.
+
+Usage:
+
+    maze-solver-wall [-s|--show] [-l|--left] [-h|--html] [-c|--coverage] MAZE-FILE
+    maze-solver-wall [-h|--help]
+
+Check if the maze is traversable, using the Wall Follower Algorithm. The result is
+the text "no" or "yes".
+
+Use the [-s|--show] option to print the maze to the screen with the visted nodes
+highlighted. The nodes are shown in green, if the maze is traversable, and red
+otherwise. Add the [-h|--html] option to get the output encoded in html colours
+(Bootstrap 4) instead.
+
+Note the double meaning of [-h]. The context makes them distinct.
+
+Examples:
+
+    maze-solver-wall 25x25-ok.maze
+    maze-solver-wall -s 25x25-ok.maze
+    maze-solver-wall -s -l 25x25-ok.maze
+    maze-solver-wall -s 10x10-fail.maze
+    maze-solver-wall -s -l 10x10-fail.maze
+
+    maze-solver-wall -h
+
+=head1 SEE ALSO
+
+This program is part of the Raku module «Game::Amazing».
+
+=head1 AUTHOR
+
+Arne Sommer <arne@perl6.eu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2020 Arne Sommer
+
+This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
+
+=end pod

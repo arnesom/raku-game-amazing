@@ -1,0 +1,825 @@
+#! /usr/bin/env raku
+
+use v6.d;
+
+use Game::Amazing;
+use Pod::To::Text;
+
+use NativeCall;
+use Gnome::N::N-GObject;
+
+use Gnome::Gdk3::Events;
+use Gnome::Gdk3::Types;
+use Gnome::Gdk3::Keysyms;
+
+use Gnome::Gtk3::Main;
+use Gnome::Gtk3::Label;
+use Gnome::Gtk3::Enums;
+use Gnome::Gtk3::Window;
+use Gnome::Gtk3::Grid;
+use Gnome::Gtk3::Button;
+
+use Gnome::Gtk3::TextBuffer;
+use Gnome::Gtk3::TextView;
+use Gnome::Gtk3::TextTagTable;
+use Gnome::Gtk3::TextTag;
+use Gnome::Gtk3::TextIter;
+
+use Gnome::Gdk3::RGBA;
+use Gnome::GObject::Value;
+use Gnome::GObject::Type;
+
+use Gnome::N::X;
+# Gnome::N::debug(:on);
+
+my $m;
+my $g;
+my $h;
+my $curr-row;
+my $curr-col;
+my $moves;
+my $finished;
+my $saved;
+my $curr-zoom;
+my $traversable;
+my $traversable-path;
+my $now;
+my $random;
+my $file-name;
+
+my Gnome::Gtk3::Window     $w;
+my Gnome::Gtk3::TextBuffer $tb;
+my Gnome::Gtk3::TextView   $tv;
+my Gnome::Gtk3::Label      $lbl;
+my Gnome::Gtk3::Button     $btn-exit;
+my Gnome::Gtk3::Button     $btn-new1;
+my Gnome::Gtk3::Button     $btn-new2;
+my Gnome::Gtk3::Button     $btn-new3;
+my Gnome::Gtk3::Button     $btn-path;
+my Gnome::Gtk3::Button     $btn-save;
+my Gnome::Gtk3::Button     $btn-help;
+my Gnome::Gtk3::Button     @edit-buttons;
+
+my $help-text = q:to/END/; 
+Welcome to amazing-gtk, the playable frontend to 'Game::Amazing'.
+
+Use the array keys to navigate. The game is finished when you reach the
+lower right corner, and the arrow keys will be disabled.
+
+Use the 'plus' or 'minus' keys to change the zoom. The initial value is
+1, unless changed with the «-z=<int>» command line option. Legal values
+are 1, 2, 3, 4 and 5.
+
+Click 'Exit' to exit at any time.
+
+The 'New*-buttons are only active at the start and stop posititions, and
+only if you have requested a random maze (i.e. not loaded a maze file).
+The 'New -' button will generate a new maze with 1 row and column less,
+'New' will use the same size, and 'New +' will increase both with 1.
+
+The 'Path' and 'Save' buttons are only enabled when the game is finished.
+Click on 'Path' to see the shortest path through the maze. Click on 'Save'
+to save the maze for future use. Take a note of the filename and position.
+
+Specify a maze file on the command line, or none to get a randomly generated
+one. Random mazes support size parameters on the command line: »-b=<int>»
+(box) is the number of rows and columns. The default value is 25. It is
+possible to specify the rows with «-r=<int>» and the columns with «-c=<int>».
+
+The randomly generated mazes will always be traversable, but it is possible
+to load untraversable maze files.
+
+Good luck!
+
+© Arne Sommer, 2020. Published under the Artistic License
+END
+
+multi MAIN ($file where $file.IO.f && $file.IO.r, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off))
+{
+  $m = Game::Amazing.new: $file;
+  $random    = False;
+  $file-name = $file;
+  start-game($m, 0, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off);
+}
+
+multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off))
+{
+  $m = Game::Amazing.new(:$rows, :$cols, :$scale, ensure-traversable => True);
+  $random = True;
+  start-game($m, $scale, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off);
+}
+
+multi MAIN(Bool :h(:$help))
+{
+  say pod2text($=pod);
+}
+
+sub again ($m, $scale, :$rows = $m.rows, :$cols = $m.cols, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False)
+{
+  $m.new(:$rows, :$cols, :$scale, ensure-traversable => True);
+  start-game($m, $scale, :$zoom, :$edit, :$no-path, :$toggle-off);
+}
+
+sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False)
+{
+  $curr-row  = 0;
+  $curr-col  = 0;
+  $moves     = 0;
+  $finished  = False;
+  $saved     = False;
+  $curr-zoom = 1;
+  ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+
+  $now = now;
+
+  if $init
+  {
+    $g = Gnome::Gtk3::Main.new;
+    $w = Gnome::Gtk3::Window.new;
+
+    $w.set_title($edit ?? 'Amazingly Raku - Editor' !! 'Amazingly Raku'  );
+    $w.set-border-width(20);
+
+    my Gnome::Gtk3::Grid $grid .= new;
+    $w.gtk-container-add($grid);
+    
+    $lbl .= new(text => 'Use +/- to change zoom, and arrow keys to navigate.');
+    $grid.gtk-grid-attach( $lbl, 0, 1+4, 7, 1);
+
+    $btn-exit .= new(:label('Exit'));
+    $grid.gtk-grid-attach( $btn-exit, 0, 2+4, 1, 1);
+    $btn-exit.set_tooltip_text('Exit');
+
+    $btn-new1 .= new(:label('New -'));
+    $grid.gtk-grid-attach( $btn-new1, 1, 2+4, 1, 1);
+    $btn-new1.set_tooltip_text('New game with smaller size');
+ 
+    $btn-new2 .= new(:label('New'));
+    $grid.gtk-grid-attach( $btn-new2, 2, 2+4, 1, 1);
+    $btn-new2.set_tooltip_text('New game with same size');
+
+    $btn-new3 .= new(:label('New +'));
+    $grid.gtk-grid-attach( $btn-new3, 3, 2+4, 1, 1);
+    $btn-new3.set_tooltip_text('New game with larger size');
+
+    $btn-path .= new(:label('Path'));
+    $grid.gtk-grid-attach( $btn-path, 4, 2+4, 1, 1);
+    $btn-path.set_tooltip_text('Show the shortest path for a finished game');
+
+    $btn-save .= new(:label('Save'));
+    $grid.gtk-grid-attach( $btn-save, 5, 2+4, 1, 1);
+    $btn-save.set_tooltip_text('Save the game');
+
+    $btn-help .= new(:label('Help'));
+    $grid.gtk-grid-attach( $btn-help, 6, 2+4, 1, 1);
+    $btn-help.set_tooltip_text('Show the Help window');
+
+    $btn-path.set-sensitive(False);
+    $btn-save.set-sensitive(False) unless $edit;
+    unless $random { $_.set-sensitive(False) for ($btn-new1, $btn-new2, $btn-new3); }
+
+    $tb .= new;
+    $tv .= new;
+    $tv.set_buffer($tb);
+    $tv.set_editable(False);
+    $tv.set_cursor_visible(False);
+    $tv.set_monospace(True);
+    $grid.gtk-grid-attach( $tv, 0, 0, 7, 4);
+
+    if $edit
+    {
+      dir-button('═', 1, 1); dir-button(' ', 1, 2); dir-button('║', 1, 3);
+      dir-button('╔', 2, 1); dir-button('╦', 2, 2); dir-button('╗', 2, 3);
+      dir-button('╠', 3, 1); dir-button('╬', 3, 2); dir-button('╣', 3, 3); 
+      dir-button('╚', 4, 1); dir-button('╩', 4, 2); dir-button('╝', 4, 3); 
+    }
+    
+    sub dir-button ($label, $row, $col)
+    {
+      my Gnome::Gtk3::Button $btn .= new(:label($label));
+      $grid.gtk-grid-attach($btn, $col +7, $row -1, 1, 1);
+      $btn.set_tooltip_text("Set current symbol to «$label»");
+      @edit-buttons.push: $btn;
+    }
+  }
+  
+  $tb.set_text($m.as-string.chomp);
+
+  setup-tags($tb) if $init;
+  
+  set-zoom($zoom, :silent);
+  set-message('Use +/- to change zoom, and arrow keys to navigate.');
+  
+  if $init
+  {
+    class AppSignalHandlers
+    {
+      method exit-program ( :$widget --> Int )
+      {
+        $g.gtk-main-quit;
+        return 1;
+      }
+
+      method again ( :$widget, :$offset = 0 --> Int)
+      {
+	$btn-path.set-sensitive(False);
+	$btn-save.set-sensitive(False) unless $edit;
+        again($m, $scale, rows => $m.rows + $offset, cols => $m.cols + $offset, zoom => $curr-zoom, :$edit, :$no-path, :$toggle-off);
+	return 1;
+      }
+
+      method path ( :$widget --> Int )
+      {
+        $traversable
+	 ?? show-shortest-path($traversable-path)
+	 !! show-coverage(@($traversable-path));	 
+	return 1;
+      }
+      
+      method save ( :$widget --> Int )
+      {
+        return if $saved;
+	$file-name = $file-name
+	  ?? $m.save($file-name)
+          !! $m.save(:with-size);
+	  
+        set-message("Saved maze as <span foreground='blue'>{ $file-name }</span>");
+	$saved = True unless $edit;
+	$btn-save.set-sensitive(False) unless $edit;
+	return 1;
+      }
+      
+      method help-close
+      {
+        $h.close;
+	$h = Any;
+        $btn-help.set-sensitive(False);
+      }
+
+      method help-open ( :$widget --> Int )
+      {
+        $btn-help.set-sensitive(False);
+        open-help;
+	return 1;
+      }
+
+      method change-symbol ( :$widget, :$symbol --> Int  ) ## Duplicate of sub
+      {      
+        return 1 if $curr-row == $curr-col == 0;
+	return 1 if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+   
+	$m.set-cell($curr-row, $curr-col, $symbol);
+        $tb.set_text($m.as-string.chomp);
+	set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
+        set-maze-cell('current', $curr-row, $curr-col);
+
+        ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+        $traversable
+	  ?? show-shortest-path($traversable-path)
+	  !! show-coverage(@($traversable-path));
+	  
+	return 1;
+      }
+
+      method keyboard-event ( GdkEvent $event, :$widget, :$time --> Int )
+      {
+        my $key = $event.event-key.keyval;
+	
+        $btn-help.grab-focus;
+
+        if $key == (GDK_KEY_plus | GDK_KEY_minus)
+        {
+          if $key == GDK_KEY_plus && $curr-zoom < 5
+          {
+            set-zoom($curr-zoom + 1);
+          }
+          elsif $key == GDK_KEY_minus && $curr-zoom > 1
+          {
+            set-zoom($curr-zoom - 1);
+          }
+          return 1;
+        }
+    
+        if $key == (GDK_KEY_Down | GDK_KEY_Up | GDK_KEY_Left | GDK_KEY_Right)
+        {  
+	  return 1 if $finished;
+	  
+          my $old-row = $curr-row;
+          my $old-col = $curr-col;
+
+          if $edit
+	  {
+            if    $key == GDK_KEY_Down  { $curr-row++ if $curr-row < $m.rows -1}
+            elsif $key == GDK_KEY_Up    { $curr-row-- if $curr-row >= 1 }
+            elsif $key == GDK_KEY_Left  { $curr-col-- if $curr-col >= 1 }
+            elsif $key == GDK_KEY_Right { $curr-col++ if $curr-col < $m.cols -1}
+          }
+	  else
+	  {
+            my $directions = $m.get-directions($curr-row, $curr-col);
+
+            if    $key == GDK_KEY_Down  { $curr-row++ if $directions ~~ /S/ }
+            elsif $key == GDK_KEY_Up    { $curr-row-- if $directions ~~ /N/ }
+            elsif $key == GDK_KEY_Left  { $curr-col-- if $directions ~~ /W/ }
+            elsif $key == GDK_KEY_Right { $curr-col++ if $directions ~~ /E/ }
+          }
+	  
+          if $old-row != $curr-row || $old-col != $curr-col
+          {
+            if $edit
+	    {
+	      unset-maze-cell('current', $old-row, $old-col);
+	    }
+	    elsif ! $no-path
+	    {
+	      set-maze-cell('path', $old-row,  $old-col);
+	    }
+	    else
+	    {
+	      unset-maze-cell('current', $old-row, $old-col);
+	    }
+	    
+            set-maze-cell('current', $curr-row, $curr-col);
+    	    $moves++;
+          }
+
+          if ($curr-row == $curr-col == 0)
+	  {
+            if $random { $_.set-sensitive(True) for ($btn-new1, $btn-new2, $btn-new3); }
+          }
+          elsif ($curr-row == $m.rows -1 && $curr-col == $m.cols -1)
+          {
+	    unless $edit
+	    {
+              $finished = True;
+    	      finished;
+	    }
+	    
+	    if $random { $_.set-sensitive(True) for ($btn-new1, $btn-new2, $btn-new3); }
+            $btn-path.set-sensitive(True);
+            $btn-save.set-sensitive(True) unless $edit;
+	  }
+	  elsif $old-row == $old-col == 0
+	  {
+            $_.set-sensitive(False) for ($btn-new1, $btn-new2, $btn-new3);
+          }
+   
+          return 1;
+        }
+
+        if $key == (GDK_KEY_1 |GDK_KEY_2 | GDK_KEY_3 |
+	            GDK_KEY_q |GDK_KEY_w | GDK_KEY_e |
+                    GDK_KEY_a |GDK_KEY_s | GDK_KEY_d |
+	            GDK_KEY_z |GDK_KEY_x | GDK_KEY_c |
+		    
+	            GDK_KEY_KP_Divide | GDK_KEY_KP_Multiply | GDK_KEY_KP_Subtract |
+	            GDK_KEY_KP_1 | GDK_KEY_KP_2 | GDK_KEY_KP_3 |
+		    GDK_KEY_KP_4 | GDK_KEY_KP_5 | GDK_KEY_KP_6 |
+		    GDK_KEY_KP_7 | GDK_KEY_KP_8 | GDK_KEY_KP_9 |
+		    
+		    GDK_KEY_u |GDK_KEY_h | GDK_KEY_j | GDK_KEY_n |
+		    GDK_KEY_U |GDK_KEY_H | GDK_KEY_J | GDK_KEY_N)
+        {  
+	  return 1 unless $edit;
+	  return 1 if $curr-row == $curr-col == 0;
+	  return 1 if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+
+          if    $key == GDK_KEY_KP_Divide   | GDK_KEY_1 { change-symbol('═'); }
+	  elsif $key == GDK_KEY_KP_Multiply | GDK_KEY_2 { change-symbol(' '); }
+	  elsif $key == GDK_KEY_KP_Subtract | GDK_KEY_3 { change-symbol('║'); }
+          elsif $key == GDK_KEY_KP_7        | GDK_KEY_q { change-symbol('╔'); }
+	  elsif $key == GDK_KEY_KP_8        | GDK_KEY_w { change-symbol('╦'); }
+	  elsif $key == GDK_KEY_KP_9        | GDK_KEY_e { change-symbol('╗'); }
+	  elsif $key ==	GDK_KEY_KP_4        | GDK_KEY_a { change-symbol('╠'); }
+	  elsif $key == GDK_KEY_KP_5        | GDK_KEY_s { change-symbol('╬'); }
+	  elsif $key == GDK_KEY_KP_6        | GDK_KEY_d { change-symbol('╣'); }
+	  elsif $key ==	GDK_KEY_KP_1        | GDK_KEY_z { change-symbol('╚'); }
+	  elsif $key == GDK_KEY_KP_2        | GDK_KEY_x { change-symbol('╩'); }
+	  elsif $key == GDK_KEY_KP_3        | GDK_KEY_c { change-symbol('╝'); }
+
+	  elsif $key == GDK_KEY_u { $toggle-off ?? add-direction('N') !! toggle-direction('N'); }
+	  elsif $key == GDK_KEY_h { $toggle-off ?? add-direction('W') !! toggle-direction('W'); }
+	  elsif $key == GDK_KEY_j { $toggle-off ?? add-direction('E') !! toggle-direction('E'); }
+	  elsif $key == GDK_KEY_n { $toggle-off ?? add-direction('S') !! toggle-direction('S'); }
+	  
+	  elsif $key == GDK_KEY_U { remove-direction('N') if $toggle-off; }
+	  elsif $key == GDK_KEY_H { remove-direction('W') if $toggle-off; }
+	  elsif $key == GDK_KEY_J { remove-direction('E') if $toggle-off; }
+	  elsif $key == GDK_KEY_N { remove-direction('S') if $toggle-off; }
+        }
+
+        return 0;
+      }
+
+      method mouse-event ( GdkEvent $event, :widget($window) --> Int )
+      {
+        return 1;
+      }
+    }
+
+    my AppSignalHandlers $ash .= new(:$w);
+
+    $btn-exit.register-signal($ash, 'exit-program', 'clicked');
+    $btn-new1.register-signal($ash, 'again',        'clicked', offset => -1);
+    $btn-new2.register-signal($ash, 'again',        'clicked', offset => 0);
+    $btn-new3.register-signal($ash, 'again',        'clicked', offset => 1);
+    $btn-path.register-signal($ash, 'path',         'clicked');
+    $btn-save.register-signal($ash, 'save',         'clicked');
+    $btn-help.register-signal($ash, 'help-open',    'clicked');
+
+    $w.register-signal($ash, 'exit-program',   'destroy');
+    $w.register-signal($ash, 'keyboard-event', 'key-press-event', :time(now));
+
+    if $edit
+    {
+      $_.register-signal($ash, 'change-symbol', 'clicked', symbol => $_.get-label) for @edit-buttons;
+      show-shortest-path($traversable-path) if $traversable;
+    }
+
+    $w.show-all;
+    $g.gtk-main;
+  }
+
+
+  sub set-maze-cell ($tag, $row, $col)
+  {
+    my $pos1 = $tb.get-iter-at-line-offset($row, $col);
+    my $pos2 = $tb.get-iter-at-line-offset($row, $col +1);
+
+    $tag eq 'path'
+      ?? $tb.remove_tag_by_name('current', $pos1, $pos2)
+      !! $tb.remove_tag_by_name('path', $pos1, $pos2);
+
+    $tb.apply_tag_by_name($tag, $pos1, $pos2);
+  }
+  
+  sub unset-maze-cell ($tag, $row, $col)
+  {
+    my $pos1 = $tb.get-iter-at-line-offset($row, $col);
+    my $pos2 = $tb.get-iter-at-line-offset($row, $col +1);
+    $tb.remove_tag_by_name($tag, $pos1, $pos2);
+  }
+  
+  sub set-zoom ($new-zoom, :$silent, :$force)
+  {
+    unless $force
+    {
+      return 0 unless 1 <= $new-zoom <= 5;
+      return 0 if $new-zoom == $curr-zoom;
+      
+      $tb.remove_tag_by_name("zoom$curr-zoom", $tb.get_start_iter, $tb.get_end_iter);
+    }
+    
+    $tb.apply_tag_by_name("zoom$new-zoom", $tb.get_start_iter, $tb.get_end_iter);
+
+    if $new-zoom < $curr-zoom && !$force
+    {
+      $w.resize(1,1);
+    }
+
+    $curr-zoom = $new-zoom;
+    set-message("Zoom: $curr-zoom") unless $silent;
+    return 1;
+  }
+
+  sub setup-tags ($parent)
+  {
+    my Gnome::Gtk3::TextTagTable $ttt .= new(:native-object($parent.get-tag-table));
+
+    my Gnome::Gtk3::TextTag $tt_short .= new(:tag-name<short>);
+    my Gnome::GObject::Value $gv      .= new(:type(G_TYPE_STRING), :value<yellow>);
+    $tt_short.set-property('background', $gv);
+    $ttt.gtk-text-tag-table-add($tt_short);
+
+    my Gnome::Gtk3::TextTag $tt_cover .= new(:tag-name<cover>);
+    $gv                               .= new(:type(G_TYPE_STRING), :value<orange>);
+    $tt_cover.set-property('background', $gv);
+    $ttt.gtk-text-tag-table-add($tt_cover);
+    
+    my Gnome::Gtk3::TextTag $tt_curr  .= new(:tag-name<current>);
+    $gv                              .= new(:type(G_TYPE_STRING), :value<blue>);
+    $tt_curr.set-property('background', $gv);
+    $gv                               .= new(:type(G_TYPE_STRING), :value<white>);
+    $tt_curr.set-property('foreground', $gv);
+    $ttt.gtk-text-tag-table-add($tt_curr);
+
+    my Gnome::Gtk3::TextTag $tt_path  .= new(:tag-name<path>);
+    $gv                               .= new(:type(G_TYPE_STRING), :value<blue>);
+    $tt_path.set-property('foreground', $gv);
+    $ttt.gtk-text-tag-table-add($tt_path);
+
+
+    my Gnome::Gtk3::TextTag $tt_zoom1 .= new(tag-name => 'zoom1');
+    $gv                               .= new(:type(G_TYPE_DOUBLE), :value<1.1e0>);
+    $tt_zoom1.set-property('scale', $gv);
+    $ttt.gtk-text-tag-table-add($tt_zoom1);
+
+    my Gnome::Gtk3::TextTag $tt_zoom2 .= new(tag-name => 'zoom2');
+    $gv                               .= new(:type(G_TYPE_DOUBLE), :value<1.2e0>);
+    $tt_zoom2.set-property('scale', $gv);
+    $ttt.gtk-text-tag-table-add($tt_zoom2);
+
+    my Gnome::Gtk3::TextTag $tt_zoom3 .= new(tag-name => 'zoom3');
+    $gv                               .= new(:type(G_TYPE_DOUBLE), :value<1.4e0>);
+    $tt_zoom3.set-property('scale', $gv);
+    $ttt.gtk-text-tag-table-add($tt_zoom3);
+
+    my Gnome::Gtk3::TextTag $tt_zoom4 .= new(tag-name => 'zoom4');
+    $gv                               .= new(:type(G_TYPE_DOUBLE), :value<1.6e0>);
+    $tt_zoom4.set-property('scale', $gv);
+    $ttt.gtk-text-tag-table-add($tt_zoom4);
+
+    my Gnome::Gtk3::TextTag $tt_zoom5 .= new(tag-name => 'zoom5');
+    $gv                               .= new(:type(G_TYPE_DOUBLE), :value<1.8e0>);
+    $tt_zoom5.set-property('scale', $gv);
+    $ttt.gtk-text-tag-table-add($tt_zoom5);
+
+    #$gv .= new(:init(G_TYPE_STRING), :value<green>);
+    #my Gnome::GObject::Value $gv2    .= new(:type(G_TYPE_STRING), :value<green>);
+    # $gv .= new(:red(.5e0), :green(.5e0), :blue(.5e0), :alpha(.5e0));
+    # $gv .= new(:init(G_TYPE_BOXED), :value(<blue>));
+    # $tt_path.set-property('foreground', $gv);
+    
+    $gv.clear-object;
+  }
+  
+  sub show-shortest-path($path)
+  {
+    my $row = 0;
+    my $col = 0;
+  
+    set-maze-cell('short', $row, $col);
+  
+    for $path.comb -> $direction
+    {
+      if    $direction eq "N" { $row--; }
+      elsif $direction eq "S" { $row++; }
+      elsif $direction eq "E" { $col++; }
+      elsif $direction eq "W" { $col--; }
+    
+      set-maze-cell('short', $row, $col)
+    }
+  }
+
+  sub show-coverage(@coverage)
+  {
+    for ^$m.rows -> $row
+    {
+      for ^$m.cols -> $col
+      {
+        set-maze-cell('cover', $row, $col) if @coverage[$row][$col];
+      }
+    }
+  }
+  
+  sub open-help
+  {   
+    $h = Gnome::Gtk3::Window.new;
+
+    $h.set_title('Amazingly Raku | Help');
+    $h.set-border-width(20);
+    my Gnome::Gtk3::Grid $grid .= new;
+    $h.gtk-container-add($grid);
+
+    my Gnome::Gtk3::TextBuffer $tb .= new;
+    my Gnome::Gtk3::TextView   $tv .= new;
+    $tv.set_buffer($tb);
+    $tv.set_editable(False);
+    $tv.set_cursor_visible(False);
+
+    # $tv.set_monospace(True);
+    $grid.gtk-grid-attach( $tv, 0, 0, 1, 1);
+    $tb.set_text($help-text);
+
+    my Gnome::Gtk3::Button $btn .= new(:label('Close'));
+    $grid.gtk-grid-attach($btn, 0, 1, 1, 1);
+    $btn.set_tooltip_text('Close this window');
+    my AppSignalHandlers $ash .= new(:$w);
+    $btn.register-signal($ash, 'help-close', 'clicked');
+    $h.show-all;
+  }
+
+  sub set-message ($message)
+  {
+    $lbl.set-markup($message);
+  }
+
+  sub finished
+  {
+    set-message("Finished in $moves moves ({ ($moves / $traversable-path.chars * 100).Int }% and { floor(now - $now) } seconds).");
+  }
+
+  sub change-symbol ($symbol) ## Duplicate of method
+  {
+    return if $curr-row == $curr-col == 0;
+    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+	
+    $m.set-cell($curr-row, $curr-col, $symbol);
+    $tb.set_text($m.as-string.chomp);
+    set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
+    set-maze-cell('current', $curr-row, $curr-col);
+
+    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+    $traversable
+      ?? show-shortest-path($traversable-path)
+      !! show-coverage(@($traversable-path));
+  }
+  
+  sub remove-direction ($direction)
+  {
+    return if $curr-row == $curr-col == 0;
+    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+
+    return unless $m.remove-direction($curr-row, $curr-col, $direction);
+    
+    $tb.set_text($m.as-string.chomp);
+    set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
+    set-maze-cell('current', $curr-row, $curr-col);
+
+    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+    $traversable
+      ?? show-shortest-path($traversable-path)
+      !! show-coverage(@($traversable-path));
+  }
+  
+  sub add-direction ($direction)
+  {
+    return if $curr-row == $curr-col == 0;
+    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+
+    return unless $m.add-direction($curr-row, $curr-col, $direction);
+    
+    $tb.set_text($m.as-string.chomp);
+    set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
+    set-maze-cell('current', $curr-row, $curr-col);
+
+    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+    $traversable
+      ?? show-shortest-path($traversable-path)
+      !! show-coverage(@($traversable-path));
+  }
+  
+  sub toggle-direction ($direction)
+  {
+    return if $curr-row == $curr-col == 0;
+    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+
+    return unless $m.toggle-direction($curr-row, $curr-col, $direction);
+    
+    $tb.set_text($m.as-string.chomp);
+    set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
+    set-maze-cell('current', $curr-row, $curr-col);
+
+    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+    $traversable
+      ?? show-shortest-path($traversable-path)
+      !! show-coverage(@($traversable-path));
+  }
+
+}
+
+
+
+=begin pod
+
+=head1 NAME
+
+amazing-gtk - Play mazes in a window (using GTK)
+
+=head1 SYNOPSIS
+
+Try to find your way through a maze, either user specified (by 'mazemaker' or
+this program in edit mode) or randomly generated.
+
+Usage:
+
+    amazing-gtk [-z|--zoom=<Int>] [-n|--no-path] [-s|--scale=<Int>] <maze-file>
+    amazing-gtk [-z|--zoom=<Int>] [-n|--no-path] [-s|--scale=<Int>] [-b|--box=<Int>] [-r|--rows=<Int>] [-c|--cols=<Int>] 
+    amazing-gtk [-z|--zoom=<Int>] [-e|--edit] [-t|--toggle-off] [-s|--scale=<Int>] <maze-file>
+    amazing-gtk [-z|--zoom=<Int>] [-e|--edit] [-t|--toggle-off] [-s|--scale=<Int>] [-b|--box=<Int>] [-r|--rows=<Int>] [-c|--cols=<Int>]
+    amazing-gtk [-h|--help]
+
+Use the «[-e|--edit]» option to open the maze in edit mode. See the 'EDIT MODE' section for
+more information.
+
+Use the [-z|--zoom=<Int>] to set the initial zoom (size of the symbols). The default value is
+1, and legal values are 1, 2, 3, 4 and 5. The zoom level can be changed any time with the «+»
+(plus) and «-» (minus) keys.
+
+The path is highlighetd behind you, as you go along the maze. This can be disabled with the 
+[-n|--no-path] option.
+
+If you specify a maze-file, usually with the «.maze» extension, it will be loaded. The maze
+does not have to be traversable.
+
+If you don't specify a maze-file, the program will generate one for you automatically. The
+default size is 25 rows and columns, but this can be changed with the [-b|--box=<Int>] option.
+If you want to only set one of them, use [-r|--rows=<Int>] for the number of rows, or
+[-c|--cols=<Int>] for the number of columns.
+
+The maze symbols with two exits ('╗', '═', '╝', '╔', '║' and '╚') have weight 1, and the rest,
+with three ('╦', '╠', '╣' and '╩') and four ('╬') exits have weight 7. That means that the
+last symbols are 7 times more likely to be choosen. You can override that with
+[-s|--scale=<Int>].
+
+Spurious exits out of the maze are possible, but will not work as exits. The randomly generated
+mazes does not have them, to avoid confusion.
+
+The randomly generated mazes will always be traversable, and it may take some time to generate
+the maze as the program will generate random mazes until it gets one that is traversable.
+Especially for lower [-s|--scale=<Int>] values.
+
+Examples:
+
+    amazing-gtk -h
+    
+    amazing-gtk -d mazes/25x25-ok.maze
+    amazing-gtk mazes/25x25-ok.maze
+
+    amazing-gtk
+    amazing-gtk -b=20
+    amazing-gtk -b=20 -c=30
+    amazing-gtk -r=20 -c=30
+    amazing-gtk -s=1 -n
+
+
+=head1 PLAYING
+
+You start at the upper left corner ('█', the solid box).
+
+Use the arrow keys to navigate through the maze. illegal moves are not possible. Visited cells
+are highlighted as you go along (except when disabled), to make it easier to see where you have
+been. 
+
+Your task is to traverse the maze and arrive at the exit (the second solid box in the lower
+right corner). Randomly generated mazes will always be traversable, but a maze loaded from a
+file may or may not be traversable.
+
+You are presented with the score when finished, the time it took and the number of steps. The
+latter is compared to the shortest path through the maze. Click on the «Path» button to see
+the shortest path (or rather one of them, as there may be several with the same length). Click
+on the «Save» button to save the maze with a random filename. Note that the number of rows and
+columns are included in the name, which is shown.
+
+Random maze mode gives you the possibility to start new games, but only at the entrance or exit.
+(You can always go back to the entrance, if stuck, to start a new game.) Click on the «New -»
+button to start with a smaller maze (1 less in both row and columns), «New» to get one with
+the same size, and «new +» for a larger maze (1 more in both row and columns).
+
+Click on the «Exit» button (or press «Control-C» in the shell) to exit.
+
+=head1 EDIT MODE
+
+Navigate with the arrow keys as in the game, but you can now move to neighbouring cells
+regardless of connections. 
+
+The shortest path is highligted in yellow. If the maze is untraversable, the part of the maze
+reachable from the entrance is shown in orange (a coverage map).
+
+Click on the symbol buttons to the right of the maze to change the current symbol (where the
+cursor is). You can also use keyboard shortcuts, on the numeric keyboard. The layout is the
+same as with the buttons:
+
+    / -> ═      * -> (space)     * -> ║
+    7 -> ╔      8 -> ╦           9 -> ╗
+    4 -> ╠      5 -> ╬           6 -> ╣
+    1 -> ╚      2 -> ╩           3 -> ╝
+
+Or the following keys on the main part of the keyboard:
+
+    1 -> ═      2 -> (space)     3 -> ║
+    q -> ╔      w -> ╦           e -> ╗
+    a -> ╠      s -> ╬           d -> ╣
+    z -> ╚      x -> ╩           c -> ╝
+
+You can also toggle individual directions, with the follwoing keyboard shortcuts:
+
+          u -> North 
+    h -> West   j -> East
+          n -> South
+
+Toggle mode can be disabled with [-t|--toggle-off]. In that case the keys mentioned
+above will _set_ the direction, and they can be _removed_ with the uppercase versions
+of the same keys.
+
+If you edit an existing maze file, it will write it back when you save the maze. If not, you
+will get a random filename with the size (rows and columns) included. Further savings will
+use the same filename, and overwrite an earlier version.
+
+The three New-buttons and the Path-button are disabled in edit mode.
+
+=head1 SEE ALSO
+
+This program is part of the Raku module «Game::Amazing».
+
+=head1 AUTHOR
+
+Arne Sommer <arne@perl6.eu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2020 Arne Sommer
+
+This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
+
+=end pod

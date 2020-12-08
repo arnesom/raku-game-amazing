@@ -1,0 +1,20 @@
+{
+    "authors" : [ "Arne Sommer" ],
+    "auth": "cpan:ARNE",
+    "depends" : [
+	"Gnome::Gdk3",
+	"Termbox",
+	"Pod::To::Text"
+    ],
+    "description" : "Maze construction and traversability game",
+    "license" : "Artistic-2.0",
+    "name" : "Game::Amazing",
+    "perl" : "6.d",
+    "provides" : {
+	"Game::Amazing" : "lib/Game/Amazing.pm6"
+    },
+    "resources" : [ ],
+    "source-url" : "https://github.com/arnesom/raku-game-amazing.git",
+    "tags" : [ 'game', 'maze'],
+    "version" : "0.9.0"
+}

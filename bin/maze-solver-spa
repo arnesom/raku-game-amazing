@@ -1,0 +1,135 @@
+#! /usr/bin/env raku
+
+use Game::Amazing;
+use Pod::To::Text;
+
+multi MAIN(Bool :h(:$help))
+{
+  say pod2text($=pod);
+}
+
+multi MAIN ($maze where $maze.IO.e && $maze.IO.r, :s(:$show), :c(:$coverage), :h(:$html))
+{
+  my $m = Game::Amazing.new: $maze;
+
+  my ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+
+  my @visited = $traversable ?? () !! @($traversable-path);
+
+  my $col-blue  = "\e[44m";
+  my $col-green = "\e[42m";
+  my $col-red   = "\e[101m";
+  my $col-stop  = "\e[0m";
+
+  if ($html)
+  {
+    $col-blue  = '<span class="text-primary">';
+    $col-green = '<span class="text-success">';
+    $col-red   = '<span class="text-danger">';
+    $col-stop  = '</span>';
+  }
+
+  if $traversable
+  {
+    say "Path: $traversable-path (with length { $traversable-path.chars })";
+    show-path($traversable-path) if $show;
+  }
+  else
+  {
+    say "No path";
+    show-coverage if $show;
+  }
+
+  sub show-path ($path)
+  {
+    my @maze = $m.maze.clone;  
+    my $row  = 0;
+    my $col  = 0;
+
+    for $path.comb -> $direction
+    {  
+      @maze[$row][$col] = $col-green ~ @maze[$row][$col] ~ $col-stop;
+      if    $direction eq "N" { $row--; }
+      elsif $direction eq "S" { $row++; }
+      elsif $direction eq "W" { $col--; }
+      elsif $direction eq "E" { $col++; }
+    }
+
+    @maze[$row][$col] = $col-green ~ @maze[$row][$col] ~ $col-stop;
+ 
+    say @$_.join for @maze;
+  }
+
+  sub show-coverage
+  {
+    my @matrix;
+
+    for ^$m.rows -> $row
+    {
+      for ^$m.cols -> $col
+      {
+        @matrix[$row][$col] = @visited[$row][$col]
+         ?? $col-red ~ $m.maze[$row][$col] ~ $col-stop
+         !! $m.maze[$row][$col];
+      }
+    }
+
+    say @$_.join for @matrix;
+  }
+}
+
+=begin pod
+
+=head1 NAME
+
+maze-solver-spa - Check a maze for traversability with the Single Path Algorithm
+
+=head1 SYNOPSIS
+
+Use this program to check of the given maze is traversable. It uses the Single Path
+Algorithm.
+
+Usage:
+
+    maze-solver-spa [-s|--show] [-h|--html] [-c|--coverage] MAZE-FILE
+    maze-solver-spa [-h|--help]
+
+Check if the maze is traversable, using the Single Path Algorithm. If it is, the
+path is shown as a string containing the letters «N» (North), «E» (East), «S» (South)
+and «W» (West), and the length (number of steps). Note that ther may be other paths
+with the same length.
+
+Use the [-s|--show] option to print the maze to the screen with the shortest path
+highlighted. Add the [-h|--html] option to get the output encoded in html colours
+(Bootstrap 4) instead.
+
+Use the [-c|--coverage] option to get a coverage map if the maze is untraversable.
+This will show all the cells reachable from the entrance.
+
+Note the double meaning of [-h]. The context makes them distinct.
+
+Examples:
+
+    maze-solver-spa 25x25-ok.maze
+    maze-solver-spa -s 25x25-ok.maze
+    maze-solver-spa -s -h 25x25-ok.maze
+    maze-solver-spa -s -c 10x10-fail.maze
+    maze-solver-spa -s -c -h 10x10-fail.maze
+
+    maze-solver-spa -h
+
+=head1 SEE ALSO
+
+This program is part of the Raku module «Game::Amazing».
+
+=head1 AUTHOR
+
+Arne Sommer <arne@perl6.eu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2020 Arne Sommer
+
+This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
+
+=end pod
