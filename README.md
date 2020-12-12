@@ -267,6 +267,25 @@ my $boolean = $m.is-traversable-wall(:verbose);
 
 This is normally not very useful to end users.
 
+transform
+---------
+
+Transform the maze in the specified way. This will generate a new maze, which is the 
+return value, and will not affect the current maze. 
+
+The method takes one argument, which is one of: 
+* __R__ or  __90__ - rotate  90 degrees to the right
+* __D__ or __180__ - rotate 180 degrees (down)
+* __L__ or __270__ - rotate  90 degrees to the left
+* __H__ - flip horizonatally
+* __V__ - flip vertically
+
+Note that the entrance and exit symbols (which are identical) will not be fixed when 
+moved to the _wrong_ corners. [[Add an option]]. 
+
+!! Note that fixing the corners can lead to irrevokable changes, so that a further 
+!! transformation to the initial position will case a slightly different maze.
+
 EXAMPLES
 ========
 
@@ -311,6 +330,12 @@ Another game. Traverse the maze in a graphical window. It uses the Â«Gnome::GTKÂ
 module.
 
 This program can also edit mazes.
+
+maze-transform
+--------------
+
+Transform a maze file. It supports rotation (90, 180 and 270 degrees) and flipping
+(horizontal and vertical).
 
 AUTHOR
 ======

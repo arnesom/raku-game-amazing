@@ -1,0 +1,83 @@
+#! /usr/bin/env raku
+
+use lib "lib";
+
+use Game::Amazing;
+use Pod::To::Text;
+
+multi MAIN(Bool :h(:$help))
+{
+  say pod2text($=pod);
+}
+
+multi MAIN ($maze where $maze.IO.e && $maze.IO.r, $transform where $transform eq "90" | "180" | "270" | "R" | "D" | "L" | "V" | "H" = "90")
+{
+  my $m = Game::Amazing.new: $maze;
+
+  my $new = $m.transform($transform);
+
+  $new.save($*OUT);
+}
+
+=begin pod
+
+=head1 NAME
+
+maze-transform - Transform (rotate or flip) a maze
+
+=head1 SYNOPSIS
+
+Use this program to transform a maze in a number of ways. Rotation (R or 90, D or 180,
+L or 270) and Flip horizontally (H) and vertically (V) is currently supported.
+
+Usage:
+
+    maze-transform MAZE-FILE [90|180|270|R|D|L|H|V]
+
+    maze-transform [-h|--help]
+
+It will transform the maze in the specified way. The rotation is in degrees in the
+clockwise direction.
+
+90 is to the right, 180 is down and 270 is left.
+
+
+Check if the maze is traversable, using the Single Path Algorithm. If it is, the
+path is shown as a string containing the letters «N» (North), «E» (East), «S» (South)
+and «W» (West), and the length (number of steps). Note that ther may be other paths
+with the same length.
+
+Use the [-s|--show] option to print the maze to the screen with the shortest path
+highlighted. Add the [-h|--html] option to get the output encoded in html colours
+(Bootstrap 4) instead.
+
+Use the [-c|--coverage] option to get a coverage map if the maze is untraversable.
+This will show all the cells reachable from the entrance.
+
+Note the double meaning of [-h]. The context makes them distinct.
+
+Examples:
+
+    maze-transform 25x25-ok.maze
+    maze-transform -s 25x25-ok.maze
+    maze-transform -s -h 25x25-ok.maze
+    maze-transform -s -c 10x10-fail.maze
+    maze-transform -s -c -h 10x10-fail.maze
+
+    maze-transform -h
+
+=head1 SEE ALSO
+
+This program is part of the Raku module «Game::Amazing».
+
+=head1 AUTHOR
+
+Arne Sommer <arne@perl6.eu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2020 Arne Sommer
+
+This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
+
+=end pod
