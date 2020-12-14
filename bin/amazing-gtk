@@ -128,7 +128,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
   $finished  = False;
   $saved     = False;
   $curr-zoom = 1;
-  ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+
+  $traversable      = $m.is-traversable(:force);
+  $traversable-path = $m.get-path;
 
   $now = now;
 
@@ -230,9 +232,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
 
       method path ( :$widget --> Int )
       {
-        $traversable
-	 ?? show-shortest-path($traversable-path)
-	 !! show-coverage(@($traversable-path));	 
+        $m.is-traversable
+	 ?? show-shortest-path()
+	 !! show-coverage();
 	return 1;
       }
       
@@ -273,10 +275,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
 	set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
         set-maze-cell('current', $curr-row, $curr-col);
 
-        ($traversable, $traversable-path) = $m.is-traversable(:get-path);
-        $traversable
-	  ?? show-shortest-path($traversable-path)
-	  !! show-coverage(@($traversable-path));
+        self.is-traversable(:force)
+	  ?? show-shortest-path()
+	  !! show-coverage();
 	  
 	return 1;
       }
@@ -433,7 +434,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     if $edit
     {
       $_.register-signal($ash, 'change-symbol', 'clicked', symbol => $_.get-label) for @edit-buttons;
-      show-shortest-path($traversable-path) if $traversable;
+      show-shortest-path if $traversable;
     }
 
     $w.show-all;
@@ -441,10 +442,10 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
   }
 
 
-  sub set-maze-cell ($tag, $row, $col)
+  sub set-maze-cell ($tag, $row, $col, :$size = 1)
   {
     my $pos1 = $tb.get-iter-at-line-offset($row, $col);
-    my $pos2 = $tb.get-iter-at-line-offset($row, $col +1);
+    my $pos2 = $tb.get-iter-at-line-offset($row, $col + $size);
 
     $tag eq 'path'
       ?? $tb.remove_tag_by_name('current', $pos1, $pos2)
@@ -543,8 +544,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     $gv.clear-object;
   }
   
-  sub show-shortest-path($path)
+  sub show-shortest-path
   {
+    my $path = $m.get-path;
     my $row = 0;
     my $col = 0;
   
@@ -559,19 +561,47 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     
       set-maze-cell('short', $row, $col)
     }
+
+    set-message("Shortest path: { $path.chars } steps. Difficulty rating: { $m.get-difficulty }"); 
   }
 
-  sub show-coverage(@coverage)
+  sub show-coverage
   {
+    my @coverage = $m.get-coverage;
+    my $count = 0;
+
+    my $start-row;
+    my $start-col;
+    my $size = 0;
+    
     for ^$m.rows -> $row
     {
       for ^$m.cols -> $col
       {
-        set-maze-cell('cover', $row, $col) if @coverage[$row][$col];
+        if @coverage[$row][$col]
+        {
+	  if $size == 0 { $start-row = $row; $start-col = $col; }
+	  $count++;
+          $size++;
+
+          if $col == $m.cols -1
+	  {
+            set-maze-cell('cover', $start-row, $start-col, :$size);
+	    $size = 0;
+          }
+	}
+	elsif $size
+	{
+          set-maze-cell('cover', $start-row, $start-col, :$size);
+	  $size = 0;
+	}
       }
     }
+
+    set-maze-cell('cover', $start-row, $start-col, :$size) if $size;
+    set-message("Coverage: { ($count / $m.cols / $m.rows * 100).round }%");
   }
-  
+
   sub open-help
   {   
     $h = Gnome::Gtk3::Window.new;
@@ -619,10 +649,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
     set-maze-cell('current', $curr-row, $curr-col);
 
-    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
-    $traversable
-      ?? show-shortest-path($traversable-path)
-      !! show-coverage(@($traversable-path));
+     $m.is-traversable(:force)
+       ?? show-shortest-path()
+       !! show-coverage();
   }
   
   sub remove-direction ($direction)
@@ -636,10 +665,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
     set-maze-cell('current', $curr-row, $curr-col);
 
-    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
-    $traversable
-      ?? show-shortest-path($traversable-path)
-      !! show-coverage(@($traversable-path));
+    $m.is-traversable(:force)
+      ?? show-shortest-path()
+      !! show-coverage();
   }
   
   sub add-direction ($direction)
@@ -653,10 +681,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
     set-maze-cell('current', $curr-row, $curr-col);
 
-    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
-    $traversable
-      ?? show-shortest-path($traversable-path)
-      !! show-coverage(@($traversable-path));
+    $m.is-traversable(:force)
+      ?? show-shortest-path()
+      !! show-coverage();
   }
   
   sub toggle-direction ($direction)
@@ -670,10 +697,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     set-zoom($curr-zoom, :force, :silent) unless $curr-zoom == 1;
     set-maze-cell('current', $curr-row, $curr-col);
 
-    ($traversable, $traversable-path) = $m.is-traversable(:get-path);
-    $traversable
-      ?? show-shortest-path($traversable-path)
-      !! show-coverage(@($traversable-path));
+    $m.is-traversable(:force)
+      ?? show-shortest-path()
+      !! show-coverage();
   }
 
 }

@@ -6,7 +6,7 @@ use Game::Amazing;
 
 my $maze = "ABC\nDEF\nGHI";
 
-my $m1 = Game::Amazing.new(embed => $maze);
+my $m1 = Game::Amazing.new-embed($maze);
 
 my $m11 = $m1.transform('V');
 is($m11.as-string, "CBA\nFED\nIHG\n", "3x3 Flip Vertical");
@@ -35,7 +35,7 @@ is($m52.as-string, $m1.as-string, "3x3 Rotate 270 + 270");
 
 $maze = "ABCD\nEFGH";
 
-$m1 = Game::Amazing.new(embed => $maze);
+$m1 = Game::Amazing.new-embed($maze);
 
 $m11 = $m1.transform('V');
 is($m11.as-string, "DCBA\nHGFE\n", "4x2 Flip Vertical");

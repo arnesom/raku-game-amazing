@@ -1,12 +1,15 @@
 use v6;
 
-unit class Game::Amazing:ver<0.9.01>:auth<cpan:ARNE>;
+unit class Game::Amazing:ver<0.9.1>:auth<cpan:ARNE>;
 
 use File::Temp;
 
 has @.maze is rw;
 has $.rows is rw;
 has $.cols is rw;
+has Bool $!traversable;
+has $!path;
+has @!coverage;
 
 our %desc2symbol = (
    SW   => '╗',
@@ -42,23 +45,22 @@ our %transform = (
    '║' => ('90' => '═', '180' => '║', '270' => '═', 'V' => '║', 'H' => '║'),
 );
 
-multi method new ('empty')
+multi method new-embed($embed)
 {
   my $m = self.bless;
-  $m.maze = ();
-  $m.rows = 0;
-  $m.cols = 0;
 
-  return $m;
-}
-
-multi method new (:$embed)
-{
-  my $m = self.bless;
-  $m.maze = $embed.lines>>.comb>>.Array;
-  $m.rows = $m.maze.elems;
-  $m.cols = $m.maze[0].elems;
-
+  if $embed
+  {
+    $m.maze = $embed.lines>>.comb>>.Array;
+    $m.rows = $m.maze.elems;
+    $m.cols = $m.maze[0].elems;
+  }
+  else
+  {
+    $m.maze = ();
+    $m.rows = 0;
+    $m.cols = 0;
+  }
   return $m;
 }
 
@@ -110,7 +112,7 @@ multi method new (:$rows = 25, :$cols = 25, :$scale = 7, :$ensure-traversable = 
     $m.rows = $m.maze.elems;
     $m.cols = $m.maze[0].elems;
   }
-  while $ensure-traversable && !$m.is-traversable;
+  while $ensure-traversable && !$m.is-traversable(:force);
   
   sub remove-direction($symbol is rw, $direction) ## Replace with method below.
   {
@@ -222,8 +224,13 @@ method has-direction ($row, $col, $direction)
   return %symbol2desc{self.maze[$row][$col]}.contains: $direction;
 }
 
-method is-traversable (:$get-path)
+method is-traversable (:$force = False)
 {
+  if !$force
+  {
+    return $!traversable if defined $!traversable;
+  }
+
   my @visited;
   my @todo = ("0;0;");
   my $path;
@@ -237,7 +244,9 @@ method is-traversable (:$get-path)
 
     if $row == self.rows -1 && $col == self.cols -1
     {
-      return $get-path ?? (True, $possible-path) !! True;
+      $!path = $possible-path;
+      $!traversable = True;
+      return True;
     }
 
     for self.get-directions($row, $col).comb -> $direction
@@ -249,7 +258,33 @@ method is-traversable (:$get-path)
     }
   }
 
-  return $get-path ?? (False, @visited) !! False;
+  $!path        = "";
+  $!traversable = False;
+  @!coverage    = @visited;
+  return False;
+}
+
+method get-path
+{
+  return $!path if defined $!path;
+
+  sink self.is-traversable;
+  return $!path;
+}
+
+method get-coverage
+{
+  return @!coverage if defined @!coverage;
+
+  sink self.is-traversable;
+  return @!coverage;
+}
+
+method get-difficulty
+{
+  return 0 unless self.is-traversable;
+
+  return (self.get-path.chars / ( self.rows + self.cols -2)).round(0.1);
 }
 
 method is-traversable-wall (:$get-path = False, :$left = False, :$verbose = False)
@@ -391,11 +426,11 @@ sub new-position ($row, $col, $heading)
   return ($row,   $col-1) if $heading eq "W";
 }
 
-method transform ($type)
+method transform ($type, :$corners = False)
 {
   die "Unsupported transformation $type" unless $type eq "90" | "180" | "270" | "R" | "D" | "L" | "V" | "H";
 
-  my $new = Game::Amazing.new('empty');
+  my $new = Game::Amazing.new-embed('');
 
   my $rotated = False;
 
@@ -451,16 +486,25 @@ method transform ($type)
   $new.rows = $new.maze.elems;
   $new.cols = $new.maze[0].elems;
 
-  return $new if $rotated;
-
-  for ^$new.rows -> $row
+  unless $rotated
   {
-    for ^$new.cols -> $col
+    for ^$new.rows -> $row
     {
-      $new.maze[$row][$col] = %transform{$type}{$new.maze[$row][$col]} // $new.maze[$row][$col];
+      for ^$new.cols -> $col
+      {
+        $new.maze[$row][$col] = %transform{$type}{$new.maze[$row][$col]} // $new.maze[$row][$col];
+      }
     }
   }
-
+  
+  if $corners
+  {
+    $new.maze[0][0] = $end if $new.maze[0][0] ne $end;
+    $new.maze[0][$new.cols -1] = '╗' if $new.maze[0][0] eq $end;
+    $new.maze[$new.rows -1][0] = '╚' if $new.maze[$new.rows -1][0] eq $end;
+    $new.maze[$new.rows -1][$new.cols -1] = $end if $new.maze[$new.rows -1][$new.cols -1] ne $end;
+  }
+  
   return $new;
 }
 
@@ -488,7 +532,8 @@ See the README.md file for details of the other methods available.
 
 =head1 DESCRIPTION
 
-Game::Amazing is ...
+Game::Amazing is a module for setting up and manipulating mazes. The sample
+programs include two games, and a maze editor.
 
 =head1 AUTHOR
 

@@ -1,4 +1,16 @@
 Revision history for Game-Amazing
 
-0.9.0
+0.9.0 [9. December 2020]
     - Initial version
+
+0.9.01 [12. December 2020]
+    - #18 Fix JSON quotation in META file
+
+0.9.1 [xx. December 2020]
+    - #1 Difficulty method
+    - #2 Maze rotation
+    - #3 Maze flip
+    - #10 Shortest path length (and coverage %)
+    - #11 Difficiulty rating
+    - #13 Faster coverage map
+    - #19 New methods 'get-path' and 'get-coverage'
