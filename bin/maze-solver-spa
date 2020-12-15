@@ -12,9 +12,7 @@ multi MAIN ($maze where $maze.IO.e && $maze.IO.r, :s(:$show), :c(:$coverage), :h
 {
   my $m = Game::Amazing.new: $maze;
 
-  my ($traversable, $traversable-path) = $m.is-traversable(:get-path);
-
-  my @visited = $traversable ?? () !! @($traversable-path);
+  my $traversable = $m.is-traversable;
 
   my $col-blue  = "\e[44m";
   my $col-green = "\e[42m";
@@ -31,17 +29,19 @@ multi MAIN ($maze where $maze.IO.e && $maze.IO.r, :s(:$show), :c(:$coverage), :h
 
   if $traversable
   {
-    say "Path: $traversable-path (with length { $traversable-path.chars })";
-    show-path($traversable-path) if $show;
+    my $path = $m.get-path;
+    say "Path: $path (with length { $path.chars })";
+    show-path if $show;
   }
   else
   {
     say "No path";
-    show-coverage if $show;
+    show-coverage if $coverage;
   }
 
-  sub show-path ($path)
+  sub show-path
   {
+    my $path = $m.get-path;
     my @maze = $m.maze.clone;  
     my $row  = 0;
     my $col  = 0;
@@ -62,6 +62,7 @@ multi MAIN ($maze where $maze.IO.e && $maze.IO.r, :s(:$show), :c(:$coverage), :h
 
   sub show-coverage
   {
+    my @visited = $m.get-coverage;
     my @matrix;
 
     for ^$m.rows -> $row

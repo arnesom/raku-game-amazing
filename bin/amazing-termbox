@@ -74,7 +74,9 @@ sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
   $finished = False;
   @visited  = ();
   $saved    = False;
-  ($traversable, $traversable-path) = $m.is-traversable(:get-path);
+  
+  $traversable      = $m.is-traversable;
+  $traversable-path = $m.get-path;
 
   set-maze-cell($curr-row, $curr-col, TB_YELLOW, TB_BLACK);
 

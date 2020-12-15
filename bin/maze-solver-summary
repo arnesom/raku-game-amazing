@@ -20,10 +20,9 @@ sub check-it ($file)
     next unless $file.ends-with('.maze');
     
     my $m = Game::Amazing.new: $file;
-    my ($traversable, $traversable-path) = $m.is-traversable(:get-path);
 
-    say $traversable
-      ?? "$file [{ $m.rows },{ $m.cols }] is traversable (difficuly: { ($traversable-path.chars / ( $m.rows + $m.cols -2)).round(0.1) })."
+    say $m.is-traversable
+      ?? "$file [{ $m.rows },{ $m.cols }] is traversable (difficuly: { $m.get-difficulty })."
       !! "$file [{ $m.rows },{ $m.cols }] is not traversable.";
   }
   elsif $file.IO.d

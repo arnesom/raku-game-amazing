@@ -1,12 +1,15 @@
 use v6;
 
-unit class Game::Amazing:ver<0.9.01>:auth<cpan:ARNE>;
+unit class Game::Amazing:ver<0.9.02>:auth<cpan:ARNE>;
 
 use File::Temp;
 
 has @.maze is rw;
 has $.rows is rw;
 has $.cols is rw;
+has Bool $!traversable;
+has $!path;
+has @!coverage;
 
 our %desc2symbol = (
    SW   => '╗',
@@ -23,10 +26,43 @@ our %desc2symbol = (
 );
 
 our %symbol2desc = %desc2symbol.antipairs;
-
+   
 constant $end      = '█';
 %symbol2desc{$end} = 'ENSW';
 %symbol2desc{' '}  = '';
+
+our %transform = (
+   '╔' => ('90' => '╗', '180' => '╝', '270' => '╚', 'V' => '╗', 'H' => '╚'),
+   '╠' => ('90' => '╦', '180' => '╣', '270' => '╩', 'V' => '╣', 'H' => '╠'),
+   '╚' => ('90' => '╔', '180' => '╗', '270' => '╝', 'V' => '╝', 'H' => '╔'),
+   '╦' => ('90' => '╣', '180' => '╩', '270' => '╠', 'V' => '╦', 'H' => '╩'),
+   '╬' => ('90' => '╬', '180' => '╬', '270' => '╬', 'V' => '╬', 'H' => '╬'),
+   '╩' => ('90' => '╠', '180' => '╦', '270' => '╣', 'V' => '╩', 'H' => '╦'),
+   '╗' => ('90' => '╝', '180' => '╚', '270' => '╔', 'V' => '╔', 'H' => '╝'),
+   '╣' => ('90' => '╩', '180' => '╠', '270' => '╦', 'V' => '╠', 'H' => '╣'),
+   '╝' => ('90' => '╚', '180' => '╔', '270' => '╗', 'V' => '╚', 'H' => '╗'),
+   '═' => ('90' => '║', '180' => '═', '270' => '║', 'V' => '═', 'H' => '═'),
+   '║' => ('90' => '═', '180' => '║', '270' => '═', 'V' => '║', 'H' => '║'),
+);
+
+multi method new-embed($embed)
+{
+  my $m = self.bless;
+
+  if $embed
+  {
+    $m.maze = $embed.lines>>.comb>>.Array;
+    $m.rows = $m.maze.elems;
+    $m.cols = $m.maze[0].elems;
+  }
+  else
+  {
+    $m.maze = ();
+    $m.rows = 0;
+    $m.cols = 0;
+  }
+  return $m;
+}
 
 multi method new ($file)
 {
@@ -76,7 +112,7 @@ multi method new (:$rows = 25, :$cols = 25, :$scale = 7, :$ensure-traversable = 
     $m.rows = $m.maze.elems;
     $m.cols = $m.maze[0].elems;
   }
-  while $ensure-traversable && !$m.is-traversable;
+  while $ensure-traversable && !$m.is-traversable(:force);
   
   sub remove-direction($symbol is rw, $direction) ## Replace with method below.
   {
@@ -188,8 +224,13 @@ method has-direction ($row, $col, $direction)
   return %symbol2desc{self.maze[$row][$col]}.contains: $direction;
 }
 
-method is-traversable (:$get-path)
+method is-traversable (:$force = False)
 {
+  if !$force
+  {
+    return $!traversable if defined $!traversable;
+  }
+
   my @visited;
   my @todo = ("0;0;");
   my $path;
@@ -203,7 +244,9 @@ method is-traversable (:$get-path)
 
     if $row == self.rows -1 && $col == self.cols -1
     {
-      return $get-path ?? (True, $possible-path) !! True;
+      $!path = $possible-path;
+      $!traversable = True;
+      return True;
     }
 
     for self.get-directions($row, $col).comb -> $direction
@@ -215,7 +258,33 @@ method is-traversable (:$get-path)
     }
   }
 
-  return $get-path ?? (False, @visited) !! False;
+  $!path        = "";
+  $!traversable = False;
+  @!coverage    = @visited;
+  return False;
+}
+
+method get-path
+{
+  return $!path if defined $!path;
+
+  sink self.is-traversable;
+  return $!path;
+}
+
+method get-coverage
+{
+  return @!coverage if defined @!coverage;
+
+  sink self.is-traversable;
+  return @!coverage;
+}
+
+method get-difficulty
+{
+  return 0 unless self.is-traversable;
+
+  return (self.get-path.chars / ( self.rows + self.cols -2)).round(0.1);
 }
 
 method is-traversable-wall (:$get-path = False, :$left = False, :$verbose = False)
@@ -357,7 +426,87 @@ sub new-position ($row, $col, $heading)
   return ($row,   $col-1) if $heading eq "W";
 }
 
+method transform ($type, :$corners = False)
+{
+  die "Unsupported transformation $type" unless $type eq "90" | "180" | "270" | "R" | "D" | "L" | "V" | "H";
 
+  my $new = Game::Amazing.new-embed('');
+
+  my $rotated = False;
+
+  if $type eq "H"
+  {
+    $new.maze.unshift: self.maze[$_] for ^self.rows;
+  }
+  
+  elsif $type eq "V"
+  {
+    $new.maze.push: self.maze[$_].reverse.Array for ^self.rows;
+  }
+
+  elsif $type eq "90" | "R"
+  {
+    for ^self.rows -> $row
+    {
+      for ^self.cols -> $col
+      {
+        $new.maze[$col][self.rows - $row -1]
+	  = %transform{$type}{self.maze[$row][$col]} // self.maze[$row][$col];
+      }
+    }
+    $rotated = True;
+  }
+  
+  elsif $type eq "180" | "D"
+  {
+    for ^self.rows -> $row
+    {
+      for ^self.cols -> $col
+      {
+        $new.maze[self.rows - $row -1][self.cols - $col -1]
+	  = %transform{$type}{self.maze[$row][$col]} // self.maze[$row][$col];
+      }
+    }
+    $rotated = True;
+  }
+
+  elsif $type eq "270" | "L"
+  {
+    for ^self.rows -> $row
+    {
+      for ^self.cols -> $col
+      {
+        $new.maze[self.cols - $col -1][$row]
+	  = %transform{$type}{self.maze[$row][$col]} // self.maze[$row][$col];
+      }
+    }  
+    $rotated = True;
+  }
+
+  $new.rows = $new.maze.elems;
+  $new.cols = $new.maze[0].elems;
+
+  unless $rotated
+  {
+    for ^$new.rows -> $row
+    {
+      for ^$new.cols -> $col
+      {
+        $new.maze[$row][$col] = %transform{$type}{$new.maze[$row][$col]} // $new.maze[$row][$col];
+      }
+    }
+  }
+  
+  if $corners
+  {
+    $new.maze[0][0] = $end if $new.maze[0][0] ne $end;
+    $new.maze[0][$new.cols -1] = '╗' if $new.maze[0][0] eq $end;
+    $new.maze[$new.rows -1][0] = '╚' if $new.maze[$new.rows -1][0] eq $end;
+    $new.maze[$new.rows -1][$new.cols -1] = $end if $new.maze[$new.rows -1][$new.cols -1] ne $end;
+  }
+  
+  return $new;
+}
 
 
 
@@ -383,7 +532,8 @@ See the README.md file for details of the other methods available.
 
 =head1 DESCRIPTION
 
-Game::Amazing is ...
+Game::Amazing is a module for setting up and manipulating mazes. The sample
+programs include two games, and a maze editor.
 
 =head1 AUTHOR
 
