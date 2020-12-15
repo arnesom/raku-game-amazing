@@ -42,8 +42,11 @@ clockwise direction.
 
 The entrance and exit (the same symbol) in the upper left and lower right corners,
 may end up in wrong corners as a result of the transformation. Use the [-c|--corners]
-command line option to ensure that they stay in the correct corners. Note that this
-will cause irreversible changes, so the resulting maze will not round trip.
+command line option to ensure that they stay in the correct corners. The result of
+this is that the upper right hand corner is set to «╗», and the lower left hand corner
+to «╚». This will actually roundtrip (if we apply more changes), but only if the
+original cells do not have spurious exits. (Scroll down to «An Even More Amazing Program»
+in https://raku-musings.com/amazing1.html for more information.) 
 
 Examples:
 

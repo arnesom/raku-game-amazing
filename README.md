@@ -319,9 +319,10 @@ moved to the _wrong_ corners, but this can be fixed by using the «corners» opt
 my $new = $m.transform("R", :corners);
 ```
 
-!! Note that fixing the corners can lead to irrevokable changes, so that a further
-!! transformation to the initial position will case a slightly different maze.
-!! This is generally not the case in practice!!
+The corners that are un-entrancified and un-exitified get a symbol with two exits.
+This will actually roundtrip, as long as the original maze does not have any spurious
+exits (exits leading out of the maze). Scroll down to «An Even More Amazing Program»
+in https://raku-musings.com/amazing1.html for more information.
 
 EXAMPLES
 ========

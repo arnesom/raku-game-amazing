@@ -1,6 +1,6 @@
 use v6;
 
-unit class Game::Amazing:ver<0.9.1>:auth<cpan:ARNE>;
+unit class Game::Amazing:ver<0.9.02>:auth<cpan:ARNE>;
 
 use File::Temp;
 
