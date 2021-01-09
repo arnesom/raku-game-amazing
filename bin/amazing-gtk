@@ -63,8 +63,9 @@ my Gnome::Gtk3::Button     @edit-buttons;
 my $help-text = q:to/END/; 
 Welcome to amazing-gtk, the playable frontend to 'Game::Amazing'.
 
-Use the array keys to navigate. The game is finished when you reach the
-lower right corner, and the arrow keys will be disabled.
+You start in the upper left corner, shown in red. Use the array keys to
+navigate. The game is finished when you reach the exit, the green box in
+the lower right corner, and the arrow keys will be disabled.
 
 Use the 'plus' or 'minus' keys to change the zoom. The initial value is
 1, unless changed with the «-z=<int>» command line option. Legal values
@@ -91,22 +92,71 @@ to load untraversable maze files.
 
 Good luck!
 
-© Arne Sommer, 2020. Published under the Artistic License
+© Arne Sommer, 2020-2021. Published under the Artistic License
 END
 
-multi MAIN ($file where $file.IO.f && $file.IO.r, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off))
+
+
+my $help-text-edit = q:to/END/; 
+Welcome to the maze editor mode of amazing-gtk, the playable frontend to
+'Game::Amazing'.
+
+The shortest path will always be shown, if any. If not, a cverage map is shown
+instead.
+
+Use the array keys to navigate. Click on any of the symbol buttons to change
+the current cell (except the entrance, shown in red, in the upper left corner,
+and the exit, shown in green, in the lower right corner). The shortest
+path/coverage map is updated in real time.
+
+The numeric keybord can be used instead of the buttons:
+    / -> ═      * -> (space)     * -> ║
+    7 -> ╔      8 -> ╦           9 -> ╗
+    4 -> ╠      5 -> ╬           6 -> ╣
+    1 -> ╚      2 -> ╩           3 -> ╝
+
+You can also use the main keyboard:
+    1 -> ═      2 -> (space)     3 -> ║
+    q -> ╔      w -> ╦           e -> ╗
+    a -> ╠      s -> ╬           d -> ╣
+    z -> ╚      x -> ╩           c -> ╝
+
+You can also toggle individual directions on/off, with the following keyboard
+shortcuts:
+          u -> North 
+    h -> West   j -> East
+          n -> South
+
+Toggle mode can be disabled with [-t|--toggle-off]. In that case the keys
+mentioned above will _set_ the direction, and they can be _removed_ with
+the uppercase versions of the same keys.
+
+If you edit an existing maze file, it will write it back when you save the
+maze. If not, you will get a random filename with the size (rows and columns)
+included. Further savings will use the same filename, and overwrite an
+earlier version.
+
+The three New-buttons and the Path-button are disabled in edit mode.
+
+Good luck!
+
+© Arne Sommer, 2020-2021. Published under the Artistic License
+
+END
+
+multi MAIN ($file where $file.IO.f && $file.IO.r, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off), :v($verbose))
 {
   $m = Game::Amazing.new: $file;
   $random    = False;
   $file-name = $file;
-  start-game($m, 0, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off);
+  start-game($m, 0, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
 }
 
-multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off))
+multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off), :v($verbose))
 {
-  $m = Game::Amazing.new(:$rows, :$cols, :$scale, ensure-traversable => True);
+  $m = Game::Amazing.new(:$rows, :$cols, :$scale, ensure-traversable => True, :$verbose);
   $random = True;
-  start-game($m, $scale, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off);
+  start-game($m, $scale, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
 }
 
 multi MAIN(Bool :h(:$help))
@@ -114,13 +164,13 @@ multi MAIN(Bool :h(:$help))
   say pod2text($=pod);
 }
 
-sub again ($m, $scale, :$rows = $m.rows, :$cols = $m.cols, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False)
+sub again ($m, $scale, :$rows = $m.rows, :$cols = $m.cols, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False, :$verbose = False)
 {
-  $m.new(:$rows, :$cols, :$scale, ensure-traversable => True);
-  start-game($m, $scale, :$zoom, :$edit, :$no-path, :$toggle-off);
+  $m.new(:$rows, :$cols, :$scale, ensure-traversable => True, :$verbose);
+  start-game($m, $scale, :$zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
 }
 
-sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False)
+sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False, :$verbose = False)
 {
   $curr-row  = 0;
   $curr-col  = 0;
@@ -211,7 +261,11 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
   
   set-zoom($zoom, :silent);
   set-message('Use +/- to change zoom, and arrow keys to navigate.');
-  
+
+  set-maze-cell('start',   0, 0);
+  set-maze-cell('current', 0, 0);
+  set-maze-cell('exit',    $m.rows -1, $m.cols -1);
+
   if $init
   {
     class AppSignalHandlers
@@ -226,7 +280,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
       {
 	$btn-path.set-sensitive(False);
 	$btn-save.set-sensitive(False) unless $edit;
-        again($m, $scale, rows => $m.rows + $offset, cols => $m.cols + $offset, zoom => $curr-zoom, :$edit, :$no-path, :$toggle-off);
+        again($m, $scale, rows => $m.rows + $offset, cols => $m.cols + $offset, zoom => $curr-zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
 	return 1;
       }
 
@@ -421,9 +475,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     my AppSignalHandlers $ash .= new(:$w);
 
     $btn-exit.register-signal($ash, 'exit-program', 'clicked');
-    $btn-new1.register-signal($ash, 'again',        'clicked', offset => -1);
-    $btn-new2.register-signal($ash, 'again',        'clicked', offset => 0);
-    $btn-new3.register-signal($ash, 'again',        'clicked', offset => 1);
+    $btn-new1.register-signal($ash, 'again',        'clicked', offset => -1, :$verbose);
+    $btn-new2.register-signal($ash, 'again',        'clicked', offset =>  0, :$verbose);
+    $btn-new3.register-signal($ash, 'again',        'clicked', offset =>  1, :$verbose);
     $btn-path.register-signal($ash, 'path',         'clicked');
     $btn-save.register-signal($ash, 'save',         'clicked');
     $btn-help.register-signal($ash, 'help-open',    'clicked');
@@ -440,7 +494,6 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     $w.show-all;
     $g.gtk-main;
   }
-
 
   sub set-maze-cell ($tag, $row, $col, :$size = 1)
   {
@@ -535,11 +588,16 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     $tt_zoom5.set-property('scale', $gv);
     $ttt.gtk-text-tag-table-add($tt_zoom5);
 
-    #$gv .= new(:init(G_TYPE_STRING), :value<green>);
-    #my Gnome::GObject::Value $gv2    .= new(:type(G_TYPE_STRING), :value<green>);
-    # $gv .= new(:red(.5e0), :green(.5e0), :blue(.5e0), :alpha(.5e0));
-    # $gv .= new(:init(G_TYPE_BOXED), :value(<blue>));
-    # $tt_path.set-property('foreground', $gv);
+    my Gnome::Gtk3::TextTag $tt_start .= new(:tag-name<start>);
+    $gv                               .= new(:type(G_TYPE_STRING), :value<red>);
+    $tt_start.set-property('foreground', $gv);
+    $ttt.gtk-text-tag-table-add($tt_start);
+
+    my Gnome::Gtk3::TextTag $tt_exit  .= new(:tag-name<exit>);
+    $gv                               .= new(:type(G_TYPE_STRING), :value<green>);
+    $tt_exit.set-property('foreground', $gv);
+    $ttt.gtk-text-tag-table-add($tt_exit);
+    
     
     $gv.clear-object;
   }
@@ -550,7 +608,8 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     my $row = 0;
     my $col = 0;
   
-    set-maze-cell('short', $row, $col);
+    set-maze-cell('start', 0, 0);
+    set-maze-cell('short', 0, 0);
   
     for $path.comb -> $direction
     {
@@ -561,6 +620,8 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     
       set-maze-cell('short', $row, $col)
     }
+
+    set-maze-cell('exit',    $m.rows -1, $m.cols -1);
 
     set-message("Shortest path: { $path.chars } steps. Difficulty rating: { $m.get-difficulty }"); 
   }
@@ -573,6 +634,8 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     my $start-row;
     my $start-col;
     my $size = 0;
+
+    set-maze-cell('start', 0, 0);
     
     for ^$m.rows -> $row
     {
@@ -599,6 +662,9 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     }
 
     set-maze-cell('cover', $start-row, $start-col, :$size) if $size;
+
+    set-maze-cell('exit',    $m.rows -1, $m.cols -1);
+    
     set-message("Coverage: { ($count / $m.cols / $m.rows * 100).round }%");
   }
 
@@ -619,7 +685,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
 
     # $tv.set_monospace(True);
     $grid.gtk-grid-attach( $tv, 0, 0, 1, 1);
-    $tb.set_text($help-text);
+    $tb.set_text($edit ?? $help-text-edit !! $help-text);
 
     my Gnome::Gtk3::Button $btn .= new(:label('Close'));
     $grid.gtk-grid-attach($btn, 0, 1, 1, 1);
@@ -738,10 +804,10 @@ The path is highlighetd behind you, as you go along the maze. This can be disabl
 If you specify a maze-file, usually with the «.maze» extension, it will be loaded. The maze
 does not have to be traversable.
 
-If you don't specify a maze-file, the program will generate one for you automatically. The
-default size is 25 rows and columns, but this can be changed with the [-b|--box=<Int>] option.
-If you want to only set one of them, use [-r|--rows=<Int>] for the number of rows, or
-[-c|--cols=<Int>] for the number of columns.
+If you don't specify a maze-file, the program will generate a traversable one for you
+automatically. The default size is 25 rows and columns, but this can be changed with the
+[-b|--box=<Int>] option. If you want to only set one of them, use [-r|--rows=<Int>] for
+the number of rows, or [-c|--cols=<Int>] for the number of columns.
 
 The maze symbols with two exits ('╗', '═', '╝', '╔', '║' and '╚') have weight 1, and the rest,
 with three ('╦', '╠', '╣' and '╩') and four ('╬') exits have weight 7. That means that the
@@ -753,7 +819,9 @@ mazes does not have them, to avoid confusion.
 
 The randomly generated mazes will always be traversable, and it may take some time to generate
 the maze as the program will generate random mazes until it gets one that is traversable.
-Especially for lower [-s|--scale=<Int>] values.
+Especially for lower [-s|--scale=<Int>] values and large mazes. If you want to see how many
+mazes the program generates before it arrives at a traversable one, use the (undocumented)
+[-v|--verbose] option.
 
 Examples:
 
@@ -771,26 +839,27 @@ Examples:
 
 =head1 PLAYING
 
-You start at the upper left corner ('█', the solid box).
+You start at the upper left corner (shown in green, and blue initially).
 
-Use the arrow keys to navigate through the maze. illegal moves are not possible. Visited cells
-are highlighted as you go along (except when disabled), to make it easier to see where you have
-been. 
+Use the arrow keys to navigate through the maze. Illegal moves are not possible. Visited
+cells are highlighted as you go along (except when disabled), to make it easier to see
+where you have been. 
 
-Your task is to traverse the maze and arrive at the exit (the second solid box in the lower
-right corner). Randomly generated mazes will always be traversable, but a maze loaded from a
-file may or may not be traversable.
+Your task is to traverse the maze and arrive at the exit (the green box in the lower
+right corner). Randomly generated mazes will always be traversable, but a maze loaded
+from a file may or may not be traversable.
 
-You are presented with the score when finished, the time it took and the number of steps. The
-latter is compared to the shortest path through the maze. Click on the «Path» button to see
-the shortest path (or rather one of them, as there may be several with the same length). Click
-on the «Save» button to save the maze with a random filename. Note that the number of rows and
-columns are included in the name, which is shown.
+You are presented with the score when finished, the time it took and the number of steps.
+The latter is compared to the shortest path through the maze. Click on the «Path» button
+to see the shortest path (or rather one of them, as there may be several with the same
+length). Click on the «Save» button to save the maze with a random filename. Note that
+the number of rows and columns are included in the name, which is shown.
 
-Random maze mode gives you the possibility to start new games, but only at the entrance or exit.
-(You can always go back to the entrance, if stuck, to start a new game.) Click on the «New -»
-button to start with a smaller maze (1 less in both row and columns), «New» to get one with
-the same size, and «new +» for a larger maze (1 more in both row and columns).
+Random maze mode gives you the possibility to start new games, but only at the entrance or
+exit. (You can always go back to the entrance, if stuck, to start a new game.) Click on
+the «New -» button to start with a smaller maze (1 less in both row and columns), «New»
+to get one with the same size, and «new +» for a larger maze (1 more in both row and
+columns).
 
 Click on the «Exit» button (or press «Control-C» in the shell) to exit.
 
@@ -799,12 +868,12 @@ Click on the «Exit» button (or press «Control-C» in the shell) to exit.
 Navigate with the arrow keys as in the game, but you can now move to neighbouring cells
 regardless of connections. 
 
-The shortest path is highligted in yellow. If the maze is untraversable, the part of the maze
-reachable from the entrance is shown in orange (a coverage map).
+The shortest path is highligted in yellow. If the maze is untraversable, the part of the
+maze reachable from the entrance is shown in orange (a coverage map).
 
-Click on the symbol buttons to the right of the maze to change the current symbol (where the
-cursor is). You can also use keyboard shortcuts, on the numeric keyboard. The layout is the
-same as with the buttons:
+Click on the symbol buttons to the right of the maze to change the current symbol (where
+the cursor is). You can also use keyboard shortcuts, on the numeric keyboard. The layout
+is the same as with the buttons:
 
     / -> ═      * -> (space)     * -> ║
     7 -> ╔      8 -> ╦           9 -> ╗
@@ -818,7 +887,7 @@ Or the following keys on the main part of the keyboard:
     a -> ╠      s -> ╬           d -> ╣
     z -> ╚      x -> ╩           c -> ╝
 
-You can also toggle individual directions, with the follwoing keyboard shortcuts:
+You can also toggle individual directions ob/off, with the following keyboard shortcuts:
 
           u -> North 
     h -> West   j -> East
@@ -828,9 +897,9 @@ Toggle mode can be disabled with [-t|--toggle-off]. In that case the keys mentio
 above will _set_ the direction, and they can be _removed_ with the uppercase versions
 of the same keys.
 
-If you edit an existing maze file, it will write it back when you save the maze. If not, you
-will get a random filename with the size (rows and columns) included. Further savings will
-use the same filename, and overwrite an earlier version.
+If you edit an existing maze file, it will write it back when you save the maze. If not,
+you will get a random filename with the size (rows and columns) included. Further savings
+will use the same filename, and overwrite an earlier version.
 
 The three New-buttons and the Path-button are disabled in edit mode.
 
@@ -844,7 +913,7 @@ Arne Sommer <arne@perl6.eu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2020 Arne Sommer
+Copyright 2020-2021 Arne Sommer
 
 This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
 

@@ -7,10 +7,18 @@ Revision history for Game-Amazing
     - #18 Fix JSON quotation in META file
 
 0.9.02 [15. December 2020]
-    - #1 Difficulty method
-    - #2 Maze rotation
-    - #3 Maze flip
+    - #1  Difficulty method
+    - #2  Maze rotation
+    - #3  Maze flip
     - #10 Shortest path length (and coverage %)
     - #11 Difficiulty rating
     - #13 Faster coverage map
     - #19 New methods 'get-path' and 'get-coverage'
+
+0.9.03 [9. January 2021]
+    - #8  A better colour scheme
+    - #9  Highlight of entrance and exit
+    - #12 Help window for Edit mode
+    - #20 Add "File::Temp" as a dependency in META6.json
+    - #21 Add verbose mode
+    

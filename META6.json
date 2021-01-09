@@ -4,7 +4,8 @@
     "depends" : [
 	"Gnome::Gdk3",
 	"Termbox",
-	"Pod::To::Text"
+	"Pod::To::Text",
+	"File::Temp"
     ],
     "description" : "Maze construction and traversability game",
     "license" : "Artistic-2.0",
@@ -16,5 +17,5 @@
     "resources" : [ ],
     "source-url" : "https://github.com/arnesom/raku-game-amazing.git",
     "tags" : [ "game", "maze"],
-    "version" : "0.9.02"
+    "version" : "0.9.03"
 }

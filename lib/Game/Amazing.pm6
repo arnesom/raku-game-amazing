@@ -1,6 +1,6 @@
 use v6;
 
-unit class Game::Amazing:ver<0.9.02>:auth<cpan:ARNE>;
+unit class Game::Amazing:ver<0.9.03>:auth<cpan:ARNE>;
 
 use File::Temp;
 
@@ -27,9 +27,11 @@ our %desc2symbol = (
 
 our %symbol2desc = %desc2symbol.antipairs;
    
-constant $end      = '█';
-%symbol2desc{$end} = 'ENSW';
-%symbol2desc{' '}  = '';
+our constant $start      = '░';
+our constant $end        = '█';
+%symbol2desc{$start} = 'ENSW';
+%symbol2desc{$end}   = 'ENSW';
+%symbol2desc{' '}    = '';
 
 our %transform = (
    '╔' => ('90' => '╗', '180' => '╝', '270' => '╚', 'V' => '╗', 'H' => '╚'),
@@ -75,7 +77,7 @@ multi method new ($file)
   return $m;
 }
 
-multi method new (:$rows = 25, :$cols = 25, :$scale = 7, :$ensure-traversable = False)
+multi method new (:$rows = 25, :$cols = 25, :$scale = 7, :$ensure-traversable = False, :$verbose = False)
 {
   my $m = self.defined ?? self !! self.bless;
 
@@ -98,6 +100,7 @@ multi method new (:$rows = 25, :$cols = 25, :$scale = 7, :$ensure-traversable = 
 
   repeat
   {
+    say ": Generating random maze" if $verbose;
     @maze = ();
     @maze.push: @symbols.roll($cols).join for ^$rows;
 
@@ -106,7 +109,8 @@ multi method new (:$rows = 25, :$cols = 25, :$scale = 7, :$ensure-traversable = 
     remove-direction(@maze[$_].substr-rw($cols-1,1), "E") for ^$rows;
     remove-direction(@maze[$rows-1].substr-rw($_,1), "S") for ^$cols;
 
-    @maze[0].substr-rw(0,1) = @maze[$rows-1].substr-rw($cols-1,1) = $end;
+    @maze[0].substr-rw(0,1)             = $start;
+    @maze[$rows-1].substr-rw($cols-1,1) = $end;
 
     $m.maze = @maze>>.comb>>.Array;
     $m.rows = $m.maze.elems;
@@ -541,7 +545,7 @@ Arne Sommer <arne@perl6.eu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2020 Arne Sommer
+Copyright 2020-2021 Arne Sommer
 
 This library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
 
