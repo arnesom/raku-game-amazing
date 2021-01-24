@@ -33,8 +33,8 @@ Generate a new maze. There are two versions:
 my $m = Game::Amazing::new($file);
 ```
 
-This one loads an existing maze from a file. The filename should end with 
-«.maze», but that isn't enforced.
+This call loads an existing maze from a file. The filename must end with 
+«.maze».
 
 ```
 my $m = Game::Amazing::new(rows => 25, cols => 25, scale => 7, ensure-traversable => False);
@@ -125,6 +125,51 @@ This method is used by «amazing-gtk» to change cell values in edit mode.
 Note that there is not check on the legality of the new symbol, nor the length of the
 value. This is on purpose, making it possible to add markup to the maze itself before
 printing it. This is done by «maze-solver-spa». This is subject to change.
+
+
+get-cell
+--------
+
+Get the symbol at the given postition.
+
+```
+my $symbol = $m.get-cell($row, $col);
+```
+
+get-size
+--------
+
+Get the size (number of rows and columns) of the maze.
+
+```
+my ($rows, $cols) = $m.get-size;
+```
+
+fix-corners
+-----------
+
+This method will ensure that the maze has exactly one entrance and one exit. The randomly 
+generated mazes have two exit symbols, and «amazing-gtk» will change the top left one to
+an entrance symbol. («amazing-termbox» checks for the coordinates and not the cell value, 
+and does not use this functionality.)
+
+Saving a maze in «amazing-gtk»
+
+```
+$m.fix-corners;
+```
+
+Note that the method does not check for entrance end exits symbols in other positions in 
+the maze (than the four corners), but should herhaps do so.
+
+It is possible to swap the entreance and exit. by using the _upside-down_ argument.
+
+
+```
+$m.fix-corners(upside-down => True);
+```
+
+**More explanation**
 
 get-directions
 --------------
@@ -217,6 +262,10 @@ my $boolean = $m.is-traversable(:force);
 
 This is used by the maze editor, whenever the user changes a symbol.
 
+*Note that this method assumes that the entrance and exit are located in the upper left
+and lower right corners (or vice versa).*
+
+
 get-path
 --------
 
@@ -236,6 +285,7 @@ my $row = 10;
 my $col = 8;
 say "Been there" if @coverage[$row][$col];
 ```
+*Note that this method assumes that the entrance is located in the upper left corner.*
 
 is-traversable-wall
 -------------------
@@ -293,6 +343,9 @@ for ^$m.rows -> $row
   say '';
 }
 ```
+
+*Note that this method assumes that the entrance and exit are located in the upper left
+and lower right corners (or vice versa).*
 
 transform
 ---------

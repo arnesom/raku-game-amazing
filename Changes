@@ -21,4 +21,10 @@ Revision history for Game-Amazing
     - #12 Help window for Edit mode
     - #20 Add "File::Temp" as a dependency in META6.json
     - #21 Add verbose mode
+
+0.9.04 [24. January 2021]
+   -  #5  A better colour scheme
+    - #17 Enforce .maze filename extension
+    - #23 Dynamic entrance and exit placement
+    - #24 User specified corners for entrance and exit on random mazes
     

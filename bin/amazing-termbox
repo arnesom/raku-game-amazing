@@ -22,11 +22,11 @@ multi MAIN ($file where $file.IO.f && $file.IO.r, :d(:$directions) = False, :n($
   start-game($m, 0, :$directions, init => True, :$no-path);
 }
 
-multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :d(:$directions) = False, :n($no-path))
+multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :d(:$directions) = False, :n($no-path), :u($upside-down))
 {
   $m = Game::Amazing.new(:$rows, :$cols, :$scale, ensure-traversable => True);
 
-  start-game($m, $scale, :$directions, init => True, :$no-path);
+  start-game($m, $scale, :$directions, init => True, :$no-path, :$upside-down);
 }
 
 multi MAIN(Bool :h(:$help))
@@ -34,15 +34,15 @@ multi MAIN(Bool :h(:$help))
   say pod2text($=pod);
 }
 
-sub again ($scale, :$rows = $m.rows, :$cols = $m.cols, :$directions, :$no-path)
+sub again ($scale, :$rows = $m.rows, :$cols = $m.cols, :$directions, :$no-path, :$upside-down)
 {
   tb-clear;
   $m.new(:$rows, :$cols, :$scale, ensure-traversable => True);
 
-  start-game($m, $scale, :$directions, :$no-path);
+  start-game($m, $scale, :$directions, :$no-path, :$upside-down);
 }
 
-sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
+sub start-game ($m, $scale, :$init = False, :$directions, :$no-path, :$upside-down)
 {
   my $now  = now;
 
@@ -64,12 +64,14 @@ sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
   {
     for ^$m.cols -> $col
     {
-      set-maze-cell($row, $col, TB_WHITE, TB_BLACK );
+      set-maze-cell($row, $col, TB_WHITE, TB_BLACK);
     }
   }
 
-  $curr-row = 0;
-  $curr-col = 0;
+  $m.fix-corners(:$upside-down);
+
+  ($curr-row, $curr-col) = $m.get-start; 
+
   $moves    = 0;
   $finished = False;
   @visited  = ();
@@ -78,9 +80,11 @@ sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
   $traversable      = $m.is-traversable;
   $traversable-path = $m.get-path;
 
-  set-maze-cell($curr-row, $curr-col, TB_YELLOW, TB_BLACK);
+  set-maze-cell($curr-row, $curr-col, TB_WHITE, TB_YELLOW);
+  my ($r, $c) = $m.get-exit;
+  set-maze-cell($r, $c, TB_GREEN, TB_GREEN);
 
-  print-directions($m.get-directions(0,0)) if $directions;
+  print-directions($m.get-directions($curr-row, $curr-col)) if $directions;
 
   tb-present;
 
@@ -117,21 +121,29 @@ sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
 
             if $old-row != $curr-row || $old-col != $curr-col
             {
-	      $no-path
-	        ?? set-maze-cell($old-row, $old-col, TB_WHITE, TB_BLACK)
-	        !! set-maze-cell($old-row, $old-col, TB_GREEN, TB_BLACK);
+	      if $m.get-cell($old-row, $old-col) eq $Game::Amazing::start
+	      {
+	        set-maze-cell($old-row, $old-col, TB_WHITE, TB_RED);
+	      }
+              elsif $no-path
+	      {
+	        set-maze-cell($old-row, $old-col, TB_WHITE, TB_BLACK);
+              }
+	      else
+	      {
+	        set-maze-cell($old-row, $old-col, TB_WHITE, TB_BLUE);
+              }
 		
 	      $moves++;
 	      if $scale
 	      {
-	         $curr-row == $curr-col == 0
-	           ?? print-string("F1: New smaller F2: New F3: New larger.", 0, $m.rows +1, TB_BLACK, TB_WHITE)
-                   !! print-string(" " x 39, 0, $m.rows +1, Any, Any);
+	        $m.get-cell($curr-row, $curr-col) eq $Game::Amazing::start
+	          ?? print-string("F1: New smaller F2: New F3: New larger.", 0, $m.rows +1, TB_BLACK, TB_WHITE)
+                  !! print-string(" " x 39, 0, $m.rows +1, Any, Any);
               } 
             }
-            if ($curr-row == $m.rows -1 && $curr-col == $m.cols -1)
+            if ($m.get-cell($curr-row, $curr-col) eq $Game::Amazing::end)
   	    {
-              set-maze-cell($curr-row, $curr-col, TB_RED, TB_BLACK);
               hide-directions if $directions;
               print-string(" " x 24, 13, 0, TB_BLACK, TB_WHITE);
  	      print-string("F1: New smaller F2: New F3: New larger.", 0, $m.rows +1, TB_WHITE, TB_BLACK ) if $scale;
@@ -143,8 +155,8 @@ sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
             else
 	    {
 	      @visited[$curr-row][$curr-col] = True;
-              $curr-row == $curr-col == 0
-	        ?? set-maze-cell($curr-row, $curr-col, TB_YELLOW, TB_BLACK)
+              $m.get-cell($curr-row, $curr-col) eq $Game::Amazing::start
+	        ?? set-maze-cell($curr-row, $curr-col, TB_WHITE, TB_YELLOW)
   	        !! set-maze-cell($curr-row, $curr-col, TB_BLACK, TB_YELLOW);
 
               print-directions($m.get-directions($curr-row, $curr-col)) if $directions;
@@ -178,7 +190,7 @@ sub start-game ($m, $scale, :$init = False, :$directions, :$no-path)
 
             $offset = 0 if ($m.rows < 5 || $m.cols < 5 ) && $offset == -1;
 
-            again($scale, rows => $m.rows + $offset, cols => $m.cols + $offset, :$directions);
+            again($scale, rows => $m.rows + $offset, cols => $m.cols + $offset, :$directions, :$upside-down);
 		    
             tb-present;
 	  }
@@ -261,8 +273,8 @@ sub show-shortest-path ($path)
     elsif $direction eq "W" { $col--; }
     
     @visited[$row][$col]
-      ?? set-maze-cell($row, $col, TB_GREEN, TB_WHITE)
-      !! set-maze-cell($row, $col, TB_YELLOW, TB_WHITE);
+      ?? set-maze-cell($row, $col, TB_BLACK, TB_WHITE)
+      !! set-maze-cell($row, $col, TB_BLUE, TB_WHITE);
   }
 }
 

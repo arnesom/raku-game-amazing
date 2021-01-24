@@ -144,7 +144,7 @@ Good luck!
 
 END
 
-multi MAIN ($file where $file.IO.f && $file.IO.r, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off), :v($verbose))
+multi MAIN ($file where $file.IO.f && $file.IO.r, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n(:$no-path), :t(:$toggle-off), :v(:$verbose))
 {
   $m = Game::Amazing.new: $file;
   $random    = False;
@@ -152,11 +152,11 @@ multi MAIN ($file where $file.IO.f && $file.IO.r, :z(:$zoom) where 1 <= $zoom <=
   start-game($m, 0, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
 }
 
-multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n($no-path), :t($toggle-off), :v($verbose))
+multi MAIN (:b(:$box) = 25, :r(:$rows) = $box, :c(:$cols) = $box, :s(:$scale) = 7, :z(:$zoom) where 1 <= $zoom <= 5 = 1, :e(:$edit), :n(:$no-path), :t(:$toggle-off), :v(:$verbose), :u(:$upside-down))
 {
   $m = Game::Amazing.new(:$rows, :$cols, :$scale, ensure-traversable => True, :$verbose);
   $random = True;
-  start-game($m, $scale, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
+  start-game($m, $scale, init => True, zoom => $zoom, :$edit, :$no-path, :$toggle-off, :$verbose, :$upside-down);
 }
 
 multi MAIN(Bool :h(:$help))
@@ -164,20 +164,22 @@ multi MAIN(Bool :h(:$help))
   say pod2text($=pod);
 }
 
-sub again ($m, $scale, :$rows = $m.rows, :$cols = $m.cols, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False, :$verbose = False)
+sub again ($m, $scale, :$rows = $m.rows, :$cols = $m.cols, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False, :$verbose = False, :$upside-down = False)
 {
   $m.new(:$rows, :$cols, :$scale, ensure-traversable => True, :$verbose);
-  start-game($m, $scale, :$zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
+  start-game($m, $scale, :$zoom, :$edit, :$no-path, :$toggle-off, :$verbose, :$upside-down);
 }
 
-sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False, :$verbose = False)
-{
-  $curr-row  = 0;
-  $curr-col  = 0;
+sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = False, :$toggle-off = False, :$verbose = False, :$upside-down = False)
+{  
   $moves     = 0;
   $finished  = False;
   $saved     = False;
   $curr-zoom = 1;
+
+  $m.fix-corners(:$upside-down);
+
+  ($curr-row, $curr-col) = $m.get-start; 
 
   $traversable      = $m.is-traversable(:force);
   $traversable-path = $m.get-path;
@@ -262,9 +264,11 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
   set-zoom($zoom, :silent);
   set-message('Use +/- to change zoom, and arrow keys to navigate.');
 
-  set-maze-cell('start',   0, 0);
-  set-maze-cell('current', 0, 0);
-  set-maze-cell('exit',    $m.rows -1, $m.cols -1);
+  my ($r, $c) = $m.get-exit;
+
+  set-maze-cell('start',   $curr-row, $curr-col);
+  set-maze-cell('current', $curr-row, $curr-col);
+  set-maze-cell('exit',    $r, $c);
 
   if $init
   {
@@ -280,7 +284,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
       {
 	$btn-path.set-sensitive(False);
 	$btn-save.set-sensitive(False) unless $edit;
-        again($m, $scale, rows => $m.rows + $offset, cols => $m.cols + $offset, zoom => $curr-zoom, :$edit, :$no-path, :$toggle-off, :$verbose);
+        again($m, $scale, rows => $m.rows + $offset, cols => $m.cols + $offset, zoom => $curr-zoom, :$edit, :$no-path, :$toggle-off, :$verbose, :$upside-down);
 	return 1;
       }
 
@@ -398,11 +402,11 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     	    $moves++;
           }
 
-          if ($curr-row == $curr-col == 0)
+          if ($m.get-cell($curr-row, $curr-col) eq $Game::Amazing::start)
 	  {
             if $random { $_.set-sensitive(True) for ($btn-new1, $btn-new2, $btn-new3); }
           }
-          elsif ($curr-row == $m.rows -1 && $curr-col == $m.cols -1)
+          elsif ($m.get-cell($curr-row, $curr-col) eq $Game::Amazing::end)
           {
 	    unless $edit
 	    {
@@ -414,7 +418,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
             $btn-path.set-sensitive(True);
             $btn-save.set-sensitive(True) unless $edit;
 	  }
-	  elsif $old-row == $old-col == 0
+	  elsif $m.get-cell($old-row, $old-col) eq $Game::Amazing::start
 	  {
             $_.set-sensitive(False) for ($btn-new1, $btn-new2, $btn-new3);
           }
@@ -607,9 +611,11 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     my $path = $m.get-path;
     my $row = 0;
     my $col = 0;
-  
-    set-maze-cell('start', 0, 0);
-    set-maze-cell('short', 0, 0);
+
+    my ($r, $c) = $m.get-start;
+
+    set-maze-cell('start', $r, $c);
+    set-maze-cell('short', $r, $c);
   
     for $path.comb -> $direction
     {
@@ -621,7 +627,8 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
       set-maze-cell('short', $row, $col)
     }
 
-    set-maze-cell('exit',    $m.rows -1, $m.cols -1);
+    ($r, $c) = $m.get-exit;
+    set-maze-cell('exit', $r, $c);
 
     set-message("Shortest path: { $path.chars } steps. Difficulty rating: { $m.get-difficulty }"); 
   }
@@ -635,7 +642,8 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
     my $start-col;
     my $size = 0;
 
-    set-maze-cell('start', 0, 0);
+    my ($r, $c) = $m.get-start;
+    set-maze-cell('start', $r, $c);
     
     for ^$m.rows -> $row
     {
@@ -663,7 +671,8 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
 
     set-maze-cell('cover', $start-row, $start-col, :$size) if $size;
 
-    set-maze-cell('exit',    $m.rows -1, $m.cols -1);
+    ($r, $c) = $m.get-exit;
+    set-maze-cell('exit', $r, $c);
     
     set-message("Coverage: { ($count / $m.cols / $m.rows * 100).round }%");
   }
@@ -707,8 +716,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
 
   sub change-symbol ($symbol) ## Duplicate of method
   {
-    return if $curr-row == $curr-col == 0;
-    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+    return if $m.get-cell($curr-row, $curr-col) eq $Game::Amazing::start | $Game::Amazing::end;
 	
     $m.set-cell($curr-row, $curr-col, $symbol);
     $tb.set_text($m.as-string.chomp);
@@ -722,8 +730,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
   
   sub remove-direction ($direction)
   {
-    return if $curr-row == $curr-col == 0;
-    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+    return if $m.get-cell($curr-row, $curr-col) eq $Game::Amazing::start | $Game::Amazing::end;
 
     return unless $m.remove-direction($curr-row, $curr-col, $direction);
     
@@ -738,8 +745,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
   
   sub add-direction ($direction)
   {
-    return if $curr-row == $curr-col == 0;
-    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+    return if $m.get-cell($curr-row, $curr-col) eq $Game::Amazing::start | $Game::Amazing::end;
 
     return unless $m.add-direction($curr-row, $curr-col, $direction);
     
@@ -754,8 +760,7 @@ sub start-game ($m, $scale, :$init = False, :$zoom, :$edit = False, :$no-path = 
   
   sub toggle-direction ($direction)
   {
-    return if $curr-row == $curr-col == 0;
-    return if $curr-row == $m.rows -1 && $curr-col == $m.cols -1;
+    return if $m.get-cell($curr-row, $curr-col) eq $Game::Amazing::start | $Game::Amazing::end;
 
     return unless $m.toggle-direction($curr-row, $curr-col, $direction);
     

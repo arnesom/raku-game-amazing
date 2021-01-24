@@ -1,6 +1,6 @@
 use v6;
 
-unit class Game::Amazing:ver<0.9.03>:auth<cpan:ARNE>;
+unit class Game::Amazing:ver<0.9.04>:auth<cpan:ARNE>;
 
 use File::Temp;
 
@@ -27,8 +27,8 @@ our %desc2symbol = (
 
 our %symbol2desc = %desc2symbol.antipairs;
    
-our constant $start      = '░';
-our constant $end        = '█';
+our constant $start  = '░';
+our constant $end    = '█';
 %symbol2desc{$start} = 'ENSW';
 %symbol2desc{$end}   = 'ENSW';
 %symbol2desc{' '}    = '';
@@ -68,7 +68,7 @@ multi method new-embed($embed)
 
 multi method new ($file)
 {
-  die "Unable to read $file" unless $file.IO.f && $file.IO.r;
+  die "Unable to read $file" unless $file ~~ /\.maze$/ && $file.IO.f && $file.IO.r;
   my $m = self.bless;
   $m.maze = $file.IO.lines>>.comb>>.Array;
   $m.rows = $m.maze.elems;
@@ -176,6 +176,121 @@ method toggle-direction($row, $col, $direction where $direction eq any('N', 'E',
 method set-cell ($row, $col, $symbol)
 {
   self.maze[$row][$col] = $symbol;
+}
+
+method get-cell ($row, $col)
+{
+  return self.maze[$row][$col];
+}
+
+method get-size
+{
+  return (self.rows, self.cols);
+}
+
+method fix-corners (:$upside-down = False)
+{
+  say "0";
+  
+  my @corners = ( self.get-cell(0,0),
+                  self.get-cell(0, self.cols -1),
+                  self.get-cell(self.rows -1, 0),
+                  self.get-cell(self.rows -1, self.cols -1)
+		);
+
+  if @corners.one eq $start && @corners.one eq $end
+  {
+    if $upside-down
+    {
+      my $a = self.get-cell(0, 0);
+      my $b = self.get-cell(self.rows -1, self.cols -1);
+      self.set-cell(0, 0, $b);
+      self.set-cell(self.rows -1, self.cols -1, $a);
+    }
+
+    return;
+  }
+
+  say "1";
+
+  if @corners.none eq $start && @corners.none eq $end
+  {
+    if $upside-down
+    {
+      self.set-cell(0, 0, $end);
+      self.set-cell(self.rows -1, self.cols -1, $start);
+    }
+    else
+    {
+      self.set-cell(0, 0, $start);
+      self.set-cell(self.rows -1, self.cols -1, $end);
+    }
+    return;
+  }
+  
+  say "2";
+
+  if @corners.grep(* eq $end).elems == 2 && @corners.none eq $start
+  {
+    if $upside-down
+    {
+      if self.get-cell(self.rows -1, self.cols -1) eq $end
+      {
+        self.set-cell(self.rows -1, self.cols -1, $start);
+      }
+      elsif self.get-cell(self.rows -1, 0) eq $end
+      {
+        self.set-cell(self.rows -1, 0, $start);
+      }
+      elsif self.get-cell(0, self.cols -1) eq $end
+      {
+        self.set-cell(0, self.cols -1, $start);
+      }
+    }
+    else
+    {
+      if self.get-cell(0, 0) eq $end
+      {
+        self.set-cell(0, 0, $start);
+      }
+      elsif self.get-cell(0, self.cols -1) eq $end
+      {
+        self.set-cell(0, self.cols -1, $start);
+      }
+      elsif self.get-cell(self.rows -1, 0) eq $end
+      {
+        self.set-cell(self.rows -1, 0, $start);
+      }
+    }
+    return;
+  }
+
+  say "3";
+
+  self.set-cell(0, 0, $upside-down ?? $end !! $start);
+  self.set-cell(self.rows -1, self.cols -1, $upside-down ?? $start !! $end);
+  self.set-cell(0, self.rows -1, " ");
+  self.set-cell(self.rows -1, 0, " ");
+}
+
+method get-start
+{
+  return (0,0) if self.get-cell(0, 0) eq $start;
+  return (self.rows -1, self.cols -1 ) if self.get-cell(self.rows -1, self.cols -1) eq $start;
+  return (0, self.cols -1 ) if self.get-cell(0, self.cols -1) eq $start;
+  return (self.rows -1, 0 ) if self.get-cell(self.rows -1, 0) eq $start;
+
+  die "No maze entrance";
+}
+
+method get-exit
+{
+  return (0,0) if self.get-cell(0, 0) eq $end;
+  return (self.rows -1, self.cols -1 ) if self.get-cell(self.rows -1, self.cols -1) eq $end;
+  return (0, self.cols -1 ) if self.get-cell(0, self.cols -1) eq $end;
+  return (self.rows -1, 0 ) if self.get-cell(self.rows -1, 0) eq $end;
+  
+  die "No maze exit";
 }
 
 multi method save (IO::Handle $fh)
@@ -528,7 +643,7 @@ This example will generate a random maze, with default values, and print it to S
 
   use Game::Amazing;
   my $m = Game::Amazing.new;
-  $m.save;
+  say $m.as-string;
 
 =end code
 
