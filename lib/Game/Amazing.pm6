@@ -1,6 +1,6 @@
 use v6;
 
-unit class Game::Amazing:ver<0.9.04>:auth<cpan:ARNE>;
+unit class Game::Amazing:ver<0.9.05>:auth<cpan:ARNE>;
 
 use File::Temp;
 
@@ -34,22 +34,22 @@ our constant $end    = '█';
 %symbol2desc{' '}    = '';
 
 our %transform = (
-   '╔' => ('90' => '╗', '180' => '╝', '270' => '╚', 'V' => '╗', 'H' => '╚'),
-   '╠' => ('90' => '╦', '180' => '╣', '270' => '╩', 'V' => '╣', 'H' => '╠'),
-   '╚' => ('90' => '╔', '180' => '╗', '270' => '╝', 'V' => '╝', 'H' => '╔'),
-   '╦' => ('90' => '╣', '180' => '╩', '270' => '╠', 'V' => '╦', 'H' => '╩'),
-   '╬' => ('90' => '╬', '180' => '╬', '270' => '╬', 'V' => '╬', 'H' => '╬'),
-   '╩' => ('90' => '╠', '180' => '╦', '270' => '╣', 'V' => '╩', 'H' => '╦'),
-   '╗' => ('90' => '╝', '180' => '╚', '270' => '╔', 'V' => '╔', 'H' => '╝'),
-   '╣' => ('90' => '╩', '180' => '╠', '270' => '╦', 'V' => '╠', 'H' => '╣'),
-   '╝' => ('90' => '╚', '180' => '╔', '270' => '╗', 'V' => '╚', 'H' => '╗'),
-   '═' => ('90' => '║', '180' => '═', '270' => '║', 'V' => '═', 'H' => '═'),
-   '║' => ('90' => '═', '180' => '║', '270' => '═', 'V' => '║', 'H' => '║'),
+   '╔' => {'90' => '╗', '180' => '╝', '270' => '╚', 'H' => '╗', 'V' => '╚'},
+   '╠' => {'90' => '╦', '180' => '╣', '270' => '╩', 'H' => '╣', 'V' => '╠'},
+   '╚' => {'90' => '╔', '180' => '╗', '270' => '╝', 'H' => '╝', 'V' => '╔'},
+   '╦' => {'90' => '╣', '180' => '╩', '270' => '╠', 'H' => '╦', 'V' => '╩'},
+   '╬' => {'90' => '╬', '180' => '╬', '270' => '╬', 'H' => '╬', 'V' => '╬'},
+   '╩' => {'90' => '╠', '180' => '╦', '270' => '╣', 'H' => '╩', 'V' => '╦'},
+   '╗' => {'90' => '╝', '180' => '╚', '270' => '╔', 'H' => '╔', 'V' => '╝'},
+   '╣' => {'90' => '╩', '180' => '╠', '270' => '╦', 'H' => '╠', 'V' => '╣'},
+   '╝' => {'90' => '╚', '180' => '╔', '270' => '╗', 'H' => '╚', 'V' => '╗'},
+   '═' => {'90' => '║', '180' => '═', '270' => '║', 'H' => '═', 'V' => '═'},
+   '║' => {'90' => '═', '180' => '║', '270' => '═', 'H' => '║', 'V' => '║'},
 );
 
 multi method new-embed($embed)
 {
-  my $m = self.bless;
+  my $m = self.defined ?? self !! self.bless;
 
   if $embed
   {
@@ -69,7 +69,7 @@ multi method new-embed($embed)
 multi method new ($file)
 {
   die "Unable to read $file" unless $file ~~ /\.maze$/ && $file.IO.f && $file.IO.r;
-  my $m = self.bless;
+  my $m = self.defined ?? self !! self.bless;
   $m.maze = $file.IO.lines>>.comb>>.Array;
   $m.rows = $m.maze.elems;
   $m.cols = $m.maze[0].elems;
@@ -190,8 +190,6 @@ method get-size
 
 method fix-corners (:$upside-down = False)
 {
-  say "0";
-  
   my @corners = ( self.get-cell(0,0),
                   self.get-cell(0, self.cols -1),
                   self.get-cell(self.rows -1, 0),
@@ -211,8 +209,6 @@ method fix-corners (:$upside-down = False)
     return;
   }
 
-  say "1";
-
   if @corners.none eq $start && @corners.none eq $end
   {
     if $upside-down
@@ -228,8 +224,6 @@ method fix-corners (:$upside-down = False)
     return;
   }
   
-  say "2";
-
   if @corners.grep(* eq $end).elems == 2 && @corners.none eq $start
   {
     if $upside-down
@@ -264,8 +258,6 @@ method fix-corners (:$upside-down = False)
     }
     return;
   }
-
-  say "3";
 
   self.set-cell(0, 0, $upside-down ?? $end !! $start);
   self.set-cell(self.rows -1, self.cols -1, $upside-down ?? $start !! $end);
@@ -545,32 +537,33 @@ sub new-position ($row, $col, $heading)
   return ($row,   $col-1) if $heading eq "W";
 }
 
-method transform ($type, :$corners = False)
+method transform ($type is copy, :$corners = False)
 {
   die "Unsupported transformation $type" unless $type eq "90" | "180" | "270" | "R" | "D" | "L" | "V" | "H";
-
   my $new = Game::Amazing.new-embed('');
 
   my $rotated = False;
-
-  if $type eq "H"
+ 
+  if $type eq "V"
   {
     $new.maze.unshift: self.maze[$_] for ^self.rows;
   }
   
-  elsif $type eq "V"
+  elsif $type eq "H"
   {
     $new.maze.push: self.maze[$_].reverse.Array for ^self.rows;
   }
 
   elsif $type eq "90" | "R"
   {
+    $type = "90";
+    
     for ^self.rows -> $row
     {
       for ^self.cols -> $col
       {
         $new.maze[$col][self.rows - $row -1]
-	  = %transform{$type}{self.maze[$row][$col]} // self.maze[$row][$col];
+	  = %transform{self.maze[$row][$col]}<90> // self.maze[$row][$col];
       }
     }
     $rotated = True;
@@ -578,12 +571,14 @@ method transform ($type, :$corners = False)
   
   elsif $type eq "180" | "D"
   {
+    $type = "180";
+    
     for ^self.rows -> $row
     {
       for ^self.cols -> $col
-      {
+      { 
         $new.maze[self.rows - $row -1][self.cols - $col -1]
-	  = %transform{$type}{self.maze[$row][$col]} // self.maze[$row][$col];
+	  = %transform{self.maze[$row][$col]}<180> // self.maze[$row][$col];
       }
     }
     $rotated = True;
@@ -591,12 +586,14 @@ method transform ($type, :$corners = False)
 
   elsif $type eq "270" | "L"
   {
+    $type = "270";
+
     for ^self.rows -> $row
     {
       for ^self.cols -> $col
       {
         $new.maze[self.cols - $col -1][$row]
-	  = %transform{$type}{self.maze[$row][$col]} // self.maze[$row][$col];
+	  = %transform{self.maze[$row][$col]}<270> // self.maze[$row][$col];
       }
     }  
     $rotated = True;
@@ -611,16 +608,16 @@ method transform ($type, :$corners = False)
     {
       for ^$new.cols -> $col
       {
-        $new.maze[$row][$col] = %transform{$type}{$new.maze[$row][$col]} // $new.maze[$row][$col];
+        $new.maze[$row][$col] = %transform{$new.maze[$row][$col]}{$type} // $new.maze[$row][$col];
       }
     }
   }
   
   if $corners
   {
-    $new.maze[0][0] = $end if $new.maze[0][0] ne $end;
-    $new.maze[0][$new.cols -1] = '╗' if $new.maze[0][0] eq $end;
-    $new.maze[$new.rows -1][0] = '╚' if $new.maze[$new.rows -1][0] eq $end;
+    $new.maze[0][0] = $start if $new.maze[0][0] ne $start;
+    $new.maze[0][$new.cols -1] = '╗' if $new.maze[0][0] eq $end | $start;
+    $new.maze[$new.rows -1][0] = '╚' if $new.maze[$new.rows -1][0] eq $end | $start;
     $new.maze[$new.rows -1][$new.cols -1] = $end if $new.maze[$new.rows -1][$new.cols -1] ne $end;
   }
   

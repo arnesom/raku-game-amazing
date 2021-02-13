@@ -17,5 +17,5 @@
     "resources" : [ ],
     "source-url" : "https://github.com/arnesom/raku-game-amazing.git",
     "tags" : [ "game", "maze"],
-    "version" : "0.9.04"
+    "version" : "0.9.05"
 }

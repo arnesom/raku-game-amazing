@@ -11,10 +11,9 @@ multi MAIN(Bool :h(:$help))
 multi MAIN ($maze where $maze.IO.e && $maze.IO.r, $transform where $transform eq "90" | "180" | "270" | "R" | "D" | "L" | "V" | "H" = "90", :c(:$corners) = False)
 {
   my $m = Game::Amazing.new: $maze;
-
   my $new = $m.transform($transform, :$corners);
 
-  $new.save($*OUT);
+  print $new.as-string;
 }
 
 =begin pod
@@ -67,7 +66,7 @@ Arne Sommer <arne@perl6.eu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2020 Arne Sommer
+Copyright 2020-2021 Arne Sommer
 
 This program is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
 
